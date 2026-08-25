@@ -143,6 +143,7 @@ function bindMenuActions() {
   document.body.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
+    requestGameFullscreen();
     const action = btn.dataset.action;
     handleAction(action);
   });
@@ -150,7 +151,7 @@ function bindMenuActions() {
 
 function handleAction(action) {
   switch (action) {
-    case 'goto-character': requestGameFullscreen(); buildCharacterGrid(); showScreen('screen-character'); break;
+    case 'goto-character': buildCharacterGrid(); showScreen('screen-character'); break;
     case 'goto-settings': showScreen('screen-settings'); break;
     case 'goto-controls': showScreen('screen-controls'); break;
     case 'back-menu': showScreen('screen-menu'); break;
@@ -165,6 +166,7 @@ function handleAction(action) {
     case 'controller-reveal-continue': showScreen('screen-potion'); break;
     case 'potion-yes': resolveEnding(true); break;
     case 'potion-no': resolveEnding(false); break;
+    case 'force-fullscreen': requestGameFullscreen(true); break;
   }
 }
 
@@ -817,6 +819,8 @@ function setupInput() {
     GAME.settings.touch = true;
     document.getElementById('opt-touch').checked = true;
   }
+  const fsBtn = document.getElementById('btn-fullscreen');
+  if (fsBtn && isTouchDevice) fsBtn.style.display = '';
 }
 
 function resizeCanvas(canvas) {
@@ -1487,10 +1491,10 @@ function updateHUD(level) {
 
 /* ------------------------------------ INIT ----------------------------------- */
 
-function requestGameFullscreen() {
+function requestGameFullscreen(force) {
   // Solo en celulares/tablets: en desktop no forzamos pantalla completa.
   const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-  if (!isTouchDevice) return;
+  if (!isTouchDevice && !force) return;
   const el = document.documentElement;
   const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
   if (req && !document.fullscreenElement && !document.webkitFullscreenElement) {
