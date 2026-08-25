@@ -343,3 +343,16 @@ html,body{
   .menu-content{ transform: scale(0.85); }
   .panel-frame{ max-height: 94vh; padding:20px; }
 }
+
+/* ---------- botones más grandes SOLO en compu (no táctil / pantallas anchas) ---------- */
+@media (min-width: 721px){
+  .btn{
+    font-size: 1.15rem;
+    padding: 20px 58px;
+    letter-spacing: 3px;
+  }
+  .btn-secondary{
+    font-size: 1rem;
+    padding: 16px 44px;
+  }
+}
