@@ -150,7 +150,7 @@ function bindMenuActions() {
 
 function handleAction(action) {
   switch (action) {
-    case 'goto-character': buildCharacterGrid(); showScreen('screen-character'); break;
+    case 'goto-character': requestGameFullscreen(); buildCharacterGrid(); showScreen('screen-character'); break;
     case 'goto-settings': showScreen('screen-settings'); break;
     case 'goto-controls': showScreen('screen-controls'); break;
     case 'back-menu': showScreen('screen-menu'); break;
@@ -1487,6 +1487,17 @@ function updateHUD(level) {
 
 /* ------------------------------------ INIT ----------------------------------- */
 
+function requestGameFullscreen() {
+  // Solo en celulares/tablets: en desktop no forzamos pantalla completa.
+  const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (!isTouchDevice) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (req && !document.fullscreenElement && !document.webkitFullscreenElement) {
+    try { req.call(el).catch(() => {}); } catch (err) { /* el navegador puede rechazarlo, no pasa nada */ }
+  }
+}
+
 function setRealViewportHeight() {
   // En móviles, la barra de direcciones aparece/desaparece y 100vh no
   // refleja el alto real visible. window.innerHeight sí, así que lo usamos
@@ -1498,6 +1509,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setRealViewportHeight();
   window.addEventListener('resize', setRealViewportHeight);
   window.addEventListener('orientationchange', () => setTimeout(setRealViewportHeight, 100));
+  document.addEventListener('fullscreenchange', () => setTimeout(setRealViewportHeight, 100));
   bindMenuActions();
   setupInput();
   showScreen('screen-menu');
