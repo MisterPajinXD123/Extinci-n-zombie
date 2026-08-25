@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EXTINCIÓN ZOMBIE</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ SCANLINE / VIGNETTE OVERLAY ============ -->
+  <div class="crt-overlay"></div>
+
+  <!-- ============ MENU PRINCIPAL ============ -->
+  <section id="screen-menu" class="screen active">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h1 class="game-title" data-text="EXTINCIÓN ZOMBIE">EXTINCIÓN ZOMBIE</h1>
+      <p class="game-subtitle">SOBREVIVE · RESCATA · EXTERMINA</p>
+      <nav class="menu-buttons">
+        <button class="btn btn-primary" data-action="goto-character">JUGAR</button>
+        <button class="btn btn-secondary" data-action="goto-settings">CONFIGURACIÓN</button>
+        <button class="btn btn-secondary" data-action="goto-controls">CONTROLES</button>
+      </nav>
+      <div class="corner-tag">PROTOCOLO DE EXTINCIÓN // v1.0</div>
+    </div>
+  </section>
+
+  <!-- ============ CONFIGURACIÓN ============ -->
+  <section id="screen-settings" class="screen">
+    <div class="panel-frame">
+      <h2 class="panel-title">CONFIGURACIÓN</h2>
+      <div class="settings-list">
+        <label class="setting-row">
+          <span>Volumen efectos</span>
+          <input type="range" id="opt-sfx" min="0" max="100" value="70">
+        </label>
+        <label class="setting-row">
+          <span>Volumen música</span>
+          <input type="range" id="opt-music" min="0" max="100" value="50">
+        </label>
+        <label class="setting-row">
+          <span>Sacudida de cámara</span>
+          <input type="checkbox" id="opt-shake" checked>
+        </label>
+        <label class="setting-row">
+          <span>Controles táctiles</span>
+          <input type="checkbox" id="opt-touch">
+        </label>
+      </div>
+      <button class="btn btn-primary" data-action="back-menu">VOLVER</button>
+    </div>
+  </section>
+
+  <!-- ============ CONTROLES ============ -->
+  <section id="screen-controls" class="screen">
+    <div class="panel-frame">
+      <h2 class="panel-title">CONTROLES</h2>
+      <div class="controls-grid">
+        <div class="control-row"><span class="key">W A S D</span><span>Movimiento</span></div>
+        <div class="control-row"><span class="key">MOUSE</span><span>Apuntar</span></div>
+        <div class="control-row"><span class="key">CLICK IZQ</span><span>Disparar</span></div>
+        <div class="control-row"><span class="key">ESPACIO</span><span>Disparar (alternativo, sin usar el mouse)</span></div>
+        <div class="control-row"><span class="key">E</span><span>Interactuar / Rescatar / Recolectar</span></div>
+        <div class="control-row"><span class="key">1 2 3</span><span>Cambiar arma</span></div>
+        <div class="control-row"><span class="key">ESC</span><span>Pausa</span></div>
+      </div>
+      <button class="btn btn-primary" data-action="back-menu">VOLVER</button>
+    </div>
+  </section>
+
+  <!-- ============ SELECCIÓN DE PERSONAJE ============ -->
+  <section id="screen-character" class="screen">
+    <div class="panel-frame wide">
+      <h2 class="panel-title">ELIGE TU SUPERVIVIENTE</h2>
+      <div class="pick-grid" id="character-grid"></div>
+      <button class="btn btn-primary btn-next" data-action="goto-vehicle" disabled id="btn-char-next">CONTINUAR</button>
+    </div>
+  </section>
+
+  <!-- ============ SELECCIÓN GENÉRICA DE VEHÍCULO/MONTURA/AYUDANTE ============ -->
+  <section id="screen-vehicle" class="screen">
+    <div class="panel-frame wide">
+      <h2 class="panel-title" id="vehicle-title">ELIGE TU MONTURA</h2>
+      <p class="panel-sub" id="vehicle-sub"></p>
+      <div class="pick-grid" id="vehicle-grid"></div>
+      <button class="btn btn-primary btn-next" data-action="vehicle-next" id="btn-vehicle-next" disabled>CONTINUAR</button>
+    </div>
+  </section>
+
+  <!-- ============ SELECCIÓN DE ARMAS ============ -->
+  <section id="screen-weapons" class="screen">
+    <div class="panel-frame wide">
+      <h2 class="panel-title">ARSENAL — ELIGE 3 ARMAS</h2>
+      <p class="panel-sub"><span id="weapon-count">0</span> / 3 seleccionadas</p>
+      <div class="pick-grid" id="weapon-grid"></div>
+      <button class="btn btn-primary btn-next" data-action="start-stage" id="btn-weapons-next" disabled>INICIAR JUEGO</button>
+    </div>
+  </section>
+
+  <!-- ============ PANTALLA DE INICIO DE ETAPA ============ -->
+  <section id="screen-stage-intro" class="screen">
+    <div class="stage-intro-content">
+      <div class="stage-eyebrow" id="stage-intro-num">ETAPA 1</div>
+      <h2 class="stage-intro-title" id="stage-intro-title">DINOSAURIO</h2>
+      <p class="stage-intro-obj" id="stage-intro-obj">Objetivo</p>
+      <button class="btn btn-primary" data-action="stage-intro-continue">COMENZAR</button>
+    </div>
+  </section>
+
+  <!-- ============ GAMEPLAY ============ -->
+  <section id="screen-game" class="screen">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD -->
+    <div class="hud">
+      <div class="hud-top-left">
+        <div class="bar-block">
+          <div class="bar-label">SUPERVIVIENTE</div>
+          <div class="bar-track"><div class="bar-fill hp" id="hud-player-hp"></div></div>
+        </div>
+        <div class="bar-block" id="hud-vehicle-block">
+          <div class="bar-label" id="hud-vehicle-label">DINOSAURIO</div>
+          <div class="bar-track"><div class="bar-fill veh" id="hud-vehicle-hp"></div></div>
+        </div>
+      </div>
+
+      <div class="hud-top-right">
+        <div class="hud-stat">RESCATADOS <span id="hud-rescued">0</span></div>
+        <div class="hud-stat">ELIMINADOS <span id="hud-kills">0</span></div>
+      </div>
+
+      <div class="hud-boss" id="hud-boss">
+        <div class="hud-boss-label" id="hud-boss-label">JEFE: ZOMBIE ROBÓTICO</div>
+        <div class="bar-track boss"><div class="bar-fill boss" id="hud-boss-hp"></div></div>
+      </div>
+
+      <div class="hud-objective" id="hud-objective">Objetivo: —</div>
+
+      <div class="hud-bottom-left">
+        <div class="weapon-slots" id="weapon-slots"></div>
+        <div class="ammo-readout" id="hud-ammo">MUN: ∞</div>
+      </div>
+
+      <div class="hud-minimap">
+        <canvas id="minimap-canvas" width="140" height="140"></canvas>
+      </div>
+
+      <div class="hud-inventory" id="hud-inventory">
+        <div class="inv-label">INVENTARIO</div>
+        <div class="inv-items" id="inv-items"></div>
+      </div>
+
+      <div class="hud-interact" id="hud-interact">Presiona <span class="key-mini">E</span></div>
+    </div>
+
+    <!-- Touch controls -->
+    <div class="touch-controls" id="touch-controls">
+      <div class="touch-stick" id="touch-stick"><div class="touch-stick-nub" id="touch-stick-nub"></div></div>
+      <div class="touch-aim-zone" id="touch-aim-zone"></div>
+      <div class="touch-aim-stick" id="touch-aim-stick"><div class="touch-aim-nub" id="touch-aim-nub"></div></div>
+      <button class="touch-btn touch-interact" id="touch-interact">E</button>
+      <button class="touch-btn touch-weapon" id="touch-weapon">⟳</button>
+      <button class="touch-btn touch-pause" id="touch-pause">II</button>
+    </div>
+  </section>
+
+  <!-- ============ PAUSA ============ -->
+  <section id="screen-pause" class="screen overlay-screen">
+    <div class="panel-frame">
+      <h2 class="panel-title">PAUSA</h2>
+      <nav class="menu-buttons">
+        <button class="btn btn-primary" data-action="resume-game">CONTINUAR</button>
+        <button class="btn btn-secondary" data-action="restart-stage">REINICIAR ETAPA</button>
+        <button class="btn btn-secondary" data-action="quit-menu">MENÚ PRINCIPAL</button>
+      </nav>
+    </div>
+  </section>
+
+  <!-- ============ REVELACIÓN: EL ZOMBIE CON LENTES ============ -->
+  <section id="screen-controller-reveal" class="screen">
+    <div class="end-content">
+      <div class="end-scene" id="controller-scene"></div>
+      <h2 class="panel-title glow-text-red">EL ZOMBIE CON LENTES</h2>
+      <p class="end-sub">El robot cae hecho chatarra. De entre los restos emerge el zombie con lentes que lo controlaba, se detiene frente a ti y te entrega un papel doblado.</p>
+      <button class="btn btn-primary" data-action="controller-reveal-continue">LEER EL PAPEL</button>
+    </div>
+  </section>
+
+  <!-- ============ DECISIÓN DE LA POCIÓN ============ -->
+  <section id="screen-potion" class="screen overlay-screen">
+    <div class="panel-frame potion-panel">
+      <h2 class="panel-title glow-text">¿QUIERES ELIMINAR A TODOS LOS ZOMBIES Y SALVAR AL MUNDO?</h2>
+      <p class="panel-sub">El zombie con lentes espera tu respuesta en silencio.</p>
+      <div class="potion-buttons">
+        <button class="btn btn-primary" data-action="potion-yes">SÍ</button>
+        <button class="btn btn-danger" data-action="potion-no">NO</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FINAL BUENO ============ -->
+  <section id="screen-good-end" class="screen">
+    <div class="end-content good">
+      <div class="end-scene" id="good-scene"></div>
+      <p class="end-quote">"Gracias por todo." — El científico</p>
+      <h2 class="end-title good-title">¡GANASTE!</h2>
+      <p class="end-sub">El mundo ha sido salvado.</p>
+      <button class="btn btn-primary" data-action="quit-menu">MENÚ PRINCIPAL</button>
+    </div>
+  </section>
+
+  <!-- ============ FINAL MALO ============ -->
+  <section id="screen-bad-end" class="screen">
+    <div class="end-content bad">
+      <div class="end-scene bad-scene" id="bad-scene"></div>
+      <p class="end-quote">"Ya eres uno de nosotros." — El Zombie con Lentes</p>
+      <h2 class="end-title bad-title">PERDISTE</h2>
+      <p class="end-sub">El zombie con lentes presionó el botón. Te convertiste en uno de ellos, y el mundo estalló en llamas.</p>
+      <nav class="menu-buttons">
+        <button class="btn btn-primary" data-action="retry-run">REINTENTAR</button>
+        <button class="btn btn-secondary" data-action="quit-menu">MENÚ PRINCIPAL</button>
+      </nav>
+    </div>
+  </section>
+
+  <!-- ============ REINICIO DE ETAPA (muerte de vehículo) ============ -->
+  <section id="screen-stage-fail" class="screen overlay-screen">
+    <div class="panel-frame">
+      <h2 class="panel-title glow-text-red" id="stage-fail-title">HAS CAÍDO</h2>
+      <p class="panel-sub" id="stage-fail-sub">Tu montura ha sido destruida.</p>
+      <button class="btn btn-primary" data-action="restart-stage">REINTENTAR ETAPA</button>
+      <button class="btn btn-secondary" data-action="quit-menu">MENÚ PRINCIPAL</button>
+    </div>
+  </section>
+
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
