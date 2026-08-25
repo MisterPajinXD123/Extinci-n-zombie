@@ -1487,7 +1487,17 @@ function updateHUD(level) {
 
 /* ------------------------------------ INIT ----------------------------------- */
 
+function setRealViewportHeight() {
+  // En móviles, la barra de direcciones aparece/desaparece y 100vh no
+  // refleja el alto real visible. window.innerHeight sí, así que lo usamos
+  // para fijar --app-height y que el juego ocupe toda la pantalla real.
+  document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  setRealViewportHeight();
+  window.addEventListener('resize', setRealViewportHeight);
+  window.addEventListener('orientationchange', () => setTimeout(setRealViewportHeight, 100));
   bindMenuActions();
   setupInput();
   showScreen('screen-menu');

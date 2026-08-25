@@ -29,7 +29,14 @@ html,body{
   touch-action: none;
 }
 
-#app{ position:relative; width:100vw; height:100vh; overflow:hidden; }
+#app{
+  position:relative;
+  width:100vw;
+  height:100vh; /* fallback para navegadores viejos */
+  height:100dvh;
+  height: calc(var(--app-height, 100vh));
+  overflow:hidden;
+}
 
 /* ---------- CRT / scanline overlay ---------- */
 .crt-overlay{
