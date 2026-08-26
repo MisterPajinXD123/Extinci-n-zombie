@@ -497,9 +497,14 @@ function drawHeli(ctx, x, y, t, hit, isBoss) {
   ctx.restore();
 }
 
-function drawBoss(ctx, x, y, hpPct, hit, scale) {
+function drawBoss(ctx, x, y, hpPct, hit, scale, invulnerable) {
   scale = scale || 1;
   ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+  if (invulnerable) {
+    const pulse = 1 + Math.sin(Date.now() / 180) * 0.06;
+    ctx.strokeStyle = 'rgba(120,190,255,0.55)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, 52 * pulse, 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(0, 46, 40, 12, 0, 0, Math.PI * 2); ctx.fill();
   const c = hit > 0 ? '#fff' : '#4a4f46';
   ctx.fillStyle = c; ctx.fillRect(-34, -34, 68, 68);
@@ -1011,7 +1016,10 @@ function updateBullets(level, dt) {
       if (dist(b.x, b.y, z.x, z.y) < 15) { z.hp -= b.dmg; z.hit = 0.12; b.life = 0; }
     });
     if (level.boss && level.boss.active && !level.boss.defeated && !b.allyBullet) {
-      if (dist(b.x, b.y, level.boss.x, level.boss.y) < 40) { level.boss.hp -= b.dmg; level.boss.hit = 0.12; b.life = 0; }
+      if (dist(b.x, b.y, level.boss.x, level.boss.y) < 40) {
+        b.life = 0; // el impacto se bloquea igual, para dar feedback visual
+        if (!level.boss.invulnerable) { level.boss.hp -= b.dmg; level.boss.hit = 0.12; }
+      }
     }
     if (level.miniRobots && !b.allyBullet) {
       level.miniRobots.forEach(m => {
@@ -1207,24 +1215,78 @@ function updateBoss(level, dt) {
   document.getElementById('hud-boss').classList.toggle('show', b.active);
   if (!b.active) return;
   b.hit = Math.max(0, (b.hit || 0) - dt);
-  document.getElementById('hud-boss-label').textContent = 'JEFE: ZOMBIE ROBÓTICO';
-  document.getElementById('hud-boss-hp').style.width = clamp(b.hp / b.maxHp * 100, 0, 100) + '%';
+
+  // mientras queden mini robots vivos, el jefe es invulnerable
+  const escorted = !!(level.miniRobots && level.miniRobots.length > 0);
+  b.invulnerable = escorted;
+  const hpPct = b.hp / b.maxHp;
+  // fase de dificultad: solo escala una vez que las escoltas están muertas
+  b.phase = !escorted && hpPct <= 0.3 ? 3 : !escorted && hpPct <= 0.5 ? 2 : 1;
+
+  document.getElementById('hud-boss-label').textContent = escorted
+    ? 'JEFE: PROTEGIDO — ELIMINA A SUS ESCOLTAS'
+    : b.phase === 3 ? 'JEFE: ZOMBIE ROBÓTICO (FURIA)' : b.phase === 2 ? 'JEFE: ZOMBIE ROBÓTICO (ALERTA)' : 'JEFE: ZOMBIE ROBÓTICO';
+  document.getElementById('hud-boss-hp').style.width = clamp(hpPct * 100, 0, 100) + '%';
 
   b.moveT += dt;
-  b.x += Math.sin(b.moveT * 0.6) * 30 * dt;
-  b.y = clamp(b.y + 20 * dt * (dist(p.x, p.y, b.x, b.y) > 260 ? 1 : -1), 150, WORLD.h - 150);
-  b.angle = angleTo(b.x, b.y, p.x, p.y);
-  b.cd -= dt;
-  b.phase = b.hp > b.maxHp * 0.6 ? 1 : b.hp > b.maxHp * 0.25 ? 2 : 3;
-  const fireRate = b.phase === 1 ? 1.3 : b.phase === 2 ? 0.85 : 0.5;
-  const spread = b.phase === 3 ? 3 : b.phase === 2 ? 2 : 1;
-  if (b.cd <= 0) {
-    b.cd = fireRate;
-    for (let i = -Math.floor(spread / 2); i <= Math.floor(spread / 2); i++) {
-      const a = b.angle + i * 0.18;
-      level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260, dmg: 9, life: 2.6 });
+  // esquiva errática que se intensifica al perder vida, una vez sin escoltas
+  if (!escorted && b.phase >= 2) {
+    const dashChance = b.phase === 3 ? 0.035 : 0.018;
+    if (Math.random() < dashChance) {
+      const range = b.phase === 3 ? 150 : 90;
+      b.dashVX = rand(-range, range); b.dashVY = rand(-range, range); b.dashT = 0.4;
     }
   }
+  if (b.dashT > 0) {
+    b.dashT -= dt;
+    b.x = clamp(b.x + b.dashVX * dt, 150, WORLD.w - 150);
+    b.y = clamp(b.y + b.dashVY * dt, 150, WORLD.h - 150);
+  } else {
+    b.x += Math.sin(b.moveT * 0.6) * 30 * dt;
+    b.y = clamp(b.y + 20 * dt * (dist(p.x, p.y, b.x, b.y) > 260 ? 1 : -1), 150, WORLD.h - 150);
+  }
+  b.angle = angleTo(b.x, b.y, p.x, p.y);
+  b.cd -= dt;
+
+  if (b.phase <= 1) {
+    // ataque normal: con escoltas vivas o recién liberado, aún manejable
+    const fireRate = escorted ? 1.3 : 1.05;
+    if (b.cd <= 0) {
+      b.cd = fireRate;
+      const a = b.angle + rand(-0.06, 0.06);
+      level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, dmg: 9, life: 2.6 });
+    }
+  } else {
+    // fase 2 (<=50%) y fase 3 (<=30%): patrones variados de "cualquier bala",
+    // cada vez más rápidos y densos — muy difícil de esquivar y de acertarle de vuelta
+    if (b.cd <= 0) {
+      b.cd = b.phase === 3 ? 0.42 : 0.68;
+      const bulletSpeed = 250 + b.phase * 35;
+      const pattern = randi(0, 2);
+      const aimAngle = b.angle;
+      if (pattern === 0) {
+        const shots = b.phase === 3 ? 5 : 3;
+        for (let i = 0; i < shots; i++) {
+          const a = aimAngle + rand(-0.09, 0.09);
+          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 9, life: 2.6 });
+        }
+      } else if (pattern === 1) {
+        const count = b.phase === 3 ? 9 : 6;
+        const arc = 1.15;
+        for (let i = 0; i < count; i++) {
+          const a = aimAngle - arc / 2 + (arc / (count - 1)) * i;
+          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 8, life: 2.6 });
+        }
+      } else {
+        const count = b.phase === 3 ? 16 : 10;
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 / count) * i;
+          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed * 0.85, vy: Math.sin(a) * bulletSpeed * 0.85, dmg: 7, life: 2.9 });
+        }
+      }
+    }
+  }
+
   if (b.hp <= 0 && !b.defeated) {
     b.defeated = true;
     level.subPhase = 'bossDefeatedCutscene';
@@ -1480,7 +1542,7 @@ function render() {
   level.zombies.forEach(z => { if (z.type === 'rider') drawRiderZombie(ctx, z.x, z.y, z.angle); else drawZombie(ctx, z.x, z.y, z.angle, z.type, z.hit); });
 
   if (level.heli && level.heli.active) drawHeli(ctx, level.heli.x, level.heli.y, level.time, level.heli.hit, level.heli.isBoss);
-  if (level.boss && level.boss.active && !level.boss.defeated) drawBoss(ctx, level.boss.x, level.boss.y, level.boss.hp / level.boss.maxHp, level.boss.hit || 0);
+  if (level.boss && level.boss.active && !level.boss.defeated) drawBoss(ctx, level.boss.x, level.boss.y, level.boss.hp / level.boss.maxHp, level.boss.hit || 0, 1, level.boss.invulnerable);
   if (level.miniRobots && level.boss && level.boss.active && !level.boss.defeated) level.miniRobots.forEach(m => drawBoss(ctx, m.x, m.y, m.hp / m.maxHp, m.hit, 0.42));
 
   level.bullets.forEach(b => { ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; });
