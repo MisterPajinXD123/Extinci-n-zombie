@@ -93,9 +93,9 @@ const STAGES = [
     resource: { name: 'MONEDA', icon: '●', color: '#e0b13f' },
     canRepair: true,
     objectiveType: 'airBoss',
-    zombieTypes: ['walker', 'heli'],
+    zombieTypes: ['walker', 'gunner'],
     palette: { ground: '#1a2130', accent: '#232c40' },
-    objectiveText: 'Sobrevive a los helicópteros y derrota al helicóptero principal.',
+    objectiveText: 'Sobrevive a los helicópteros (algunos zombies también disparan) y derrota al helicóptero principal.',
   },
   {
     id: 4, key: 'animal', name: 'ANIMALES',
@@ -474,22 +474,32 @@ function drawWeaponIcon(ctx, x, y, w) {
   ctx.restore();
 }
 
-function drawHeli(ctx, x, y, t, hit) {
+function drawHeli(ctx, x, y, t, hit, isBoss) {
   ctx.save(); ctx.translate(x, y);
+  const scale = isBoss ? 2.4 : 1;
+  ctx.scale(scale, scale);
+  if (isBoss) {
+    // aura roja pulsante para que se note que es el jefe
+    const pulse = 1 + Math.sin(t * 4) * 0.08;
+    ctx.strokeStyle = 'rgba(209,39,45,0.5)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 34 * pulse, 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, 60, 22, 8, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = hit > 0 ? '#fff' : '#3a4038';
-  ctx.beginPath(); ctx.ellipse(0, 0, 16, 8, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillRect(-2, -2, 22, 4);
-  ctx.strokeStyle = '#20241c'; ctx.lineWidth = 2;
+  ctx.fillStyle = hit > 0 ? '#fff' : (isBoss ? '#4a2224' : '#3a4038');
+  ctx.beginPath(); ctx.ellipse(0, 0, isBoss ? 22 : 16, isBoss ? 11 : 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(-2, -2, isBoss ? 30 : 22, isBoss ? 5 : 4);
+  ctx.strokeStyle = '#20241c'; ctx.lineWidth = isBoss ? 3 : 2;
   ctx.save(); ctx.rotate(t * 18);
-  ctx.beginPath(); ctx.moveTo(-24, 0); ctx.lineTo(24, 0); ctx.moveTo(0, -24); ctx.lineTo(0, 24); ctx.stroke();
+  const bl = isBoss ? 32 : 24;
+  ctx.beginPath(); ctx.moveTo(-bl, 0); ctx.lineTo(bl, 0); ctx.moveTo(0, -bl); ctx.lineTo(0, bl); ctx.stroke();
   ctx.restore();
-  ctx.fillStyle = '#d1272d'; ctx.beginPath(); ctx.arc(14, 0, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#d1272d'; ctx.beginPath(); ctx.arc(isBoss ? 19 : 14, 0, isBoss ? 3 : 2, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
-function drawBoss(ctx, x, y, hpPct, hit) {
-  ctx.save(); ctx.translate(x, y);
+function drawBoss(ctx, x, y, hpPct, hit, scale) {
+  scale = scale || 1;
+  ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(0, 46, 40, 12, 0, 0, Math.PI * 2); ctx.fill();
   const c = hit > 0 ? '#fff' : '#4a4f46';
   ctx.fillStyle = c; ctx.fillRect(-34, -34, 68, 68);
@@ -594,6 +604,13 @@ function startStageGameplay() {
       def: GAME.selection.companion, x: player.x - 40, y: player.y, hp: 140, maxHp: 140,
       cd: 0, angle: 0,
     };
+    // Tralalero Tralala invoca a 3 aliados azules que ayudan a limpiar zombies
+    // (nunca disparan al jefe robot, solo a los zombies comunes).
+    if (GAME.selection.companion && GAME.selection.companion.id === 'tralalero') {
+      level.allies = [0, 1, 2].map(i => ({
+        x: player.x - 50 + i * 30, y: player.y + 40, angle: 0, cd: rand(0, 0.4), orbit: i,
+      }));
+    }
   }
 
   seedLevelEntities(level);
@@ -655,9 +672,18 @@ function seedLevelEntities(level) {
   if (stage.objectiveType === 'boss') {
     // el jefe aparece al final del mapa; se activa cuando el jugador se acerca
     level.boss = {
-      x: WORLD.w / 2, y: 220, hp: 900, maxHp: 900, phase: 1, active: false,
+      x: WORLD.w / 2, y: 220, hp: 1500, maxHp: 1500, phase: 1, active: false,
       angle: 0, cd: 0, moveT: 0, defeated: false, coreDefeated: false,
     };
+    // 5 mini robots que lo escoltan y disparan también al jugador
+    level.miniRobots = [0, 1, 2, 3, 4].map(i => {
+      const orbitAngle = (i / 5) * Math.PI * 2;
+      return {
+        x: level.boss.x + Math.cos(orbitAngle) * 100, y: level.boss.y + Math.sin(orbitAngle) * 100,
+        hp: 80, maxHp: 80, orbitAngle, orbitSpeed: rand(0.5, 0.9) * (Math.random() < 0.5 ? 1 : -1),
+        orbitR: rand(85, 120), angle: 0, cd: rand(0, 1), hit: 0, alive: true,
+      };
+    });
   }
   if (stage.resource) {
     for (let i = 0; i < 9; i++) {
@@ -871,7 +897,9 @@ function update(dt) {
   updatePickups(level);
   if (stage.objectiveType === 'airBoss') updateHelis(level, dt);
   if (stage.objectiveType === 'boss') updateBoss(level, dt);
+  if (level.miniRobots) updateMiniRobots(level, dt);
   if (level.companion) updateCompanion(level, dt);
+  if (level.allies) updateAllies(level, dt);
 
   level.camera.x = lerp(level.camera.x, level.player.x, 0.12);
   level.camera.y = lerp(level.camera.y, level.player.y, 0.12);
@@ -982,11 +1010,17 @@ function updateBullets(level, dt) {
       if (!z.alive) return;
       if (dist(b.x, b.y, z.x, z.y) < 15) { z.hp -= b.dmg; z.hit = 0.12; b.life = 0; }
     });
-    if (level.boss && level.boss.active && !level.boss.defeated) {
+    if (level.boss && level.boss.active && !level.boss.defeated && !b.allyBullet) {
       if (dist(b.x, b.y, level.boss.x, level.boss.y) < 40) { level.boss.hp -= b.dmg; level.boss.hit = 0.12; b.life = 0; }
     }
+    if (level.miniRobots && !b.allyBullet) {
+      level.miniRobots.forEach(m => {
+        if (!m.alive) return;
+        if (dist(b.x, b.y, m.x, m.y) < 20) { m.hp -= b.dmg; m.hit = 0.12; b.life = 0; }
+      });
+    }
     if (level.heli && level.heli.active) {
-      if (dist(b.x, b.y, level.heli.x, level.heli.y) < 24) { level.heli.hp -= b.dmg; level.heli.hit = 0.12; b.life = 0; }
+      if (dist(b.x, b.y, level.heli.x, level.heli.y) < (level.heli.isBoss ? 54 : 24)) { level.heli.hp -= b.dmg; level.heli.hit = 0.12; b.life = 0; }
     }
   });
   level.bullets = level.bullets.filter(b => b.life > 0);
@@ -1091,23 +1125,66 @@ function updateHelis(level, dt) {
   level.heliTimer -= dt;
   if (!level.heli && level.helisSpawned < 5 && level.heliTimer <= 0) {
     level.heliTimer = rand(3, 5); level.helisSpawned++;
+    const isBoss = level.helisSpawned >= 5;
     level.heli = {
-      x: rand(200, WORLD.w - 200), y: rand(200, WORLD.h - 200), hp: level.helisSpawned >= 5 ? 220 : 60, maxHp: level.helisSpawned >= 5 ? 220 : 60,
-      isBoss: level.helisSpawned >= 5, active: true, cd: 1, hit: 0, vx: rand(-40, 40), vy: rand(-40, 40),
+      x: rand(200, WORLD.w - 200), y: rand(200, WORLD.h - 200), hp: isBoss ? 420 : 60, maxHp: isBoss ? 420 : 60,
+      isBoss, active: true, cd: 1, hit: 0, vx: rand(-40, 40), vy: rand(-40, 40),
     };
     if (level.heli.isBoss) { level.bossHeliActive = true; }
   }
   if (level.heli) {
     const h = level.heli; h.hit = Math.max(0, h.hit - dt);
     h.x = clamp(h.x + h.vx * dt, 100, WORLD.w - 100); h.y = clamp(h.y + h.vy * dt, 100, WORLD.h - 100);
-    if (Math.random() < 0.01) { h.vx = rand(-50, 50); h.vy = rand(-50, 50); }
+    // el helicóptero jefe esquiva con movimientos más bruscos y frecuentes,
+    // lo que lo hace más difícil de acertar con las balas del jugador.
+    const dashChance = h.isBoss ? 0.025 : 0.01;
+    if (Math.random() < dashChance) {
+      const range = h.isBoss ? 95 : 50;
+      h.vx = rand(-range, range); h.vy = rand(-range, range);
+    }
     h.cd -= dt;
     const target = level.vehicle || level.player;
-    if (dist(h.x, h.y, target.x, target.y) < 420 && h.cd <= 0) {
+    const range = h.isBoss ? 520 : 420;
+    const inRange = dist(h.x, h.y, target.x, target.y) < range;
+
+    if (h.isBoss) {
+      if (inRange && h.cd <= 0) {
+        const hpPct = h.hp / h.maxHp;
+        const phase = hpPct > 0.66 ? 1 : hpPct > 0.33 ? 2 : 3;
+        h.cd = phase === 1 ? 1.05 : phase === 2 ? 0.72 : 0.48;
+        const aimAngle = angleTo(h.x, h.y, target.x, target.y);
+        const bulletSpeed = 230 + phase * 25;
+        const pattern = randi(0, 2); // cualquier tipo de bala cada vez: apuntada, abanico o volley circular
+        if (pattern === 0) {
+          // ráfaga apuntada
+          const shots = 2 + phase;
+          for (let i = 0; i < shots; i++) {
+            const a = aimAngle + rand(-0.08, 0.08);
+            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 9, life: 2.6 });
+          }
+        } else if (pattern === 1) {
+          // abanico amplio hacia el jugador
+          const count = 5 + phase;
+          const arc = 0.95;
+          for (let i = 0; i < count; i++) {
+            const a = aimAngle - arc / 2 + (arc / (count - 1)) * i;
+            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 8, life: 2.6 });
+          }
+        } else {
+          // volley circular en todas direcciones
+          const count = 8 + phase * 2;
+          for (let i = 0; i < count; i++) {
+            const a = (Math.PI * 2 / count) * i;
+            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed * 0.85, vy: Math.sin(a) * bulletSpeed * 0.85, dmg: 7, life: 2.9 });
+          }
+        }
+      }
+    } else if (inRange && h.cd <= 0) {
       h.cd = 1.1;
       const a = angleTo(h.x, h.y, target.x, target.y);
       level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, dmg: 10, life: 2.4 });
     }
+
     if (h.hp <= 0) {
       if (h.isBoss) { level.pickups.push({ x: h.x, y: h.y, kind: 'potion', taken: false, r: 20 }); level.airBossDone = true; }
       level.heli = null;
@@ -1155,6 +1232,37 @@ function updateBoss(level, dt) {
   }
 }
 
+/* --------- Mini robots escoltas del jefe final (etapa 5) --------- */
+function updateMiniRobots(level, dt) {
+  if (!level.miniRobots || !level.miniRobots.length) return;
+  const b = level.boss; if (!b) return;
+  const p = level.player;
+  level.miniRobots.forEach(m => {
+    if (!m.alive) return;
+    m.hit = Math.max(0, m.hit - dt);
+    if (!b.active || b.defeated) return; // solo entran en acción junto con el jefe, y se detienen si es derrotado
+    // orbitan alrededor del jefe, siguiéndolo si se mueve
+    m.orbitAngle += m.orbitSpeed * dt;
+    m.x = lerp(m.x, b.x + Math.cos(m.orbitAngle) * m.orbitR, 0.15);
+    m.y = lerp(m.y, b.y + Math.sin(m.orbitAngle) * m.orbitR, 0.15);
+    m.angle = angleTo(m.x, m.y, p.x, p.y);
+    m.cd -= dt;
+    const d = dist(m.x, m.y, p.x, p.y);
+    if (d < 380 && m.cd <= 0) {
+      m.cd = rand(1.3, 1.9);
+      level.enemyBullets.push({ x: m.x, y: m.y, vx: Math.cos(m.angle) * 210, vy: Math.sin(m.angle) * 210, dmg: 6, life: 2.4 });
+    }
+  });
+  level.miniRobots.forEach(m => {
+    if (m.alive && m.hp <= 0) {
+      m.alive = false;
+      spawnDeathParticles(level, m.x, m.y);
+      GAME.run.kills++; GAME.run.totalKills++;
+    }
+  });
+  level.miniRobots = level.miniRobots.filter(m => m.alive);
+}
+
 function updateCompanion(level, dt) {
   const c = level.companion; const p = level.player;
   const targetX = p.x - Math.cos(p.angle) * 46 - 20, targetY = p.y - Math.sin(p.angle) * 46;
@@ -1183,6 +1291,36 @@ function updateCompanion(level, dt) {
     if (level.vehicle) level.vehicle.hp = Math.min(level.vehicle.maxHp, level.vehicle.hp + 15);
     level.player.hp = Math.min(level.player.maxHp, level.player.hp + 15);
   }
+}
+
+/* --------- Aliados azules invocados por Tralalero Tralala (etapa 5) --------- */
+const ALLY_COLOR = '#3aa0e8';
+function updateAllies(level, dt) {
+  const p = level.player;
+  level.allies.forEach((a, i) => {
+    // se mantienen repartidos alrededor del jugador cuando no hay zombies cerca
+    const spreadAngle = p.angle + Math.PI + (i - 1) * 0.9;
+    const targetX = p.x + Math.cos(spreadAngle) * 70, targetY = p.y + Math.sin(spreadAngle) * 70;
+    a.x = lerp(a.x, targetX, 0.05); a.y = lerp(a.y, targetY, 0.05);
+    a.cd -= dt;
+
+    // buscan al zombie más cercano; el robot jefe queda siempre excluido
+    let nearest = null, bestD = 999999;
+    level.zombies.forEach(z => {
+      const d = dist(a.x, a.y, z.x, z.y);
+      if (d < bestD) { bestD = d; nearest = z; }
+    });
+    if (nearest) {
+      a.angle = angleTo(a.x, a.y, nearest.x, nearest.y);
+      if (a.cd <= 0 && bestD < 380) {
+        a.cd = 0.5;
+        level.bullets.push({
+          x: a.x, y: a.y, vx: Math.cos(a.angle) * 640, vy: Math.sin(a.angle) * 640,
+          dmg: 16, color: ALLY_COLOR, life: 1, r: 3, allyBullet: true,
+        });
+      }
+    }
+  });
 }
 
 /* --------------------------- FIN DE ETAPA / OBJETIVOS ------------------------- */
@@ -1341,8 +1479,9 @@ function render() {
 
   level.zombies.forEach(z => { if (z.type === 'rider') drawRiderZombie(ctx, z.x, z.y, z.angle); else drawZombie(ctx, z.x, z.y, z.angle, z.type, z.hit); });
 
-  if (level.heli && level.heli.active) drawHeli(ctx, level.heli.x, level.heli.y, level.time, level.heli.hit);
+  if (level.heli && level.heli.active) drawHeli(ctx, level.heli.x, level.heli.y, level.time, level.heli.hit, level.heli.isBoss);
   if (level.boss && level.boss.active && !level.boss.defeated) drawBoss(ctx, level.boss.x, level.boss.y, level.boss.hp / level.boss.maxHp, level.boss.hit || 0);
+  if (level.miniRobots && level.boss && level.boss.active && !level.boss.defeated) level.miniRobots.forEach(m => drawBoss(ctx, m.x, m.y, m.hp / m.maxHp, m.hit, 0.42));
 
   level.bullets.forEach(b => { ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; });
   level.enemyBullets.forEach(b => { ctx.fillStyle = '#d1272d'; ctx.shadowColor = '#d1272d'; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; });
@@ -1357,11 +1496,50 @@ function render() {
   else drawHuman(ctx, level.player.x, level.player.y, level.player.angle, GAME.selection.character.color, GAME.selection.character.accent, 1);
 
   if (level.companion) drawCompanion(ctx, level.companion.x, level.companion.y, level.companion.def, 1.4);
+  if (level.allies) level.allies.forEach(a => drawCompanion(ctx, a.x, a.y, { color: ALLY_COLOR }, 1.3));
 
   ctx.restore();
 
+  if (level.stage.objectiveType === 'rescue') {
+    const targets = level.survivors.filter(s => !s.rescued);
+    drawOffscreenIndicators(ctx, camX, camY, w, h, targets, '#e9e6d6', 'SUPERVIVIENTE');
+  }
+  if (level.stage.objectiveType === 'findNPC' && level.npc && !level.npc.delivered) {
+    drawOffscreenIndicators(ctx, camX, camY, w, h, [level.npc], '#e9e6d6', level.npc.following ? 'CIENTÍFICO' : 'CIENTÍFICO PERDIDO');
+  }
+  if (level.stage.objectiveType === 'airBoss' && level.heli && level.heli.active) {
+    drawOffscreenIndicators(ctx, camX, camY, w, h, [level.heli], level.heli.isBoss ? '#ff5050' : '#e0b13f', level.heli.isBoss ? 'HELI JEFE' : 'HELICÓPTERO');
+  }
+
   drawMinimap(level);
   document.getElementById('hud-interact').classList.toggle('show', !!level.interactTarget);
+}
+
+/* Flechas en el borde de pantalla que apuntan hacia objetivos fuera de vista
+   (supervivientes en la etapa 1, helicóptero en la etapa 3, etc). */
+function drawOffscreenIndicators(ctx, camX, camY, w, h, targets, color, label) {
+  const cx = w / 2, cy = h / 2, margin = 34;
+  targets.forEach(t => {
+    const sx = t.x - camX, sy = t.y - camY;
+    const inView = sx > margin && sx < w - margin && sy > margin && sy < h - margin;
+    if (inView) return;
+    const dx = sx - cx, dy = sy - cy;
+    const angle = Math.atan2(dy, dx);
+    const halfW = cx - margin, halfH = cy - margin;
+    const ax = Math.abs(Math.cos(angle)), ay = Math.abs(Math.sin(angle));
+    const scale = Math.min(ax > 1e-6 ? halfW / ax : Infinity, ay > 1e-6 ? halfH / ay : Infinity);
+    const ex = cx + Math.cos(angle) * scale, ey = cy + Math.sin(angle) * scale;
+    ctx.save();
+    ctx.translate(ex, ey); ctx.rotate(angle);
+    ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.moveTo(11, 0); ctx.lineTo(-7, -8); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    if (label) {
+      ctx.fillStyle = color; ctx.font = 'bold 10px "Chakra Petch"'; ctx.textAlign = 'center';
+      ctx.fillText(label, ex - Math.cos(angle) * 14, ey - Math.sin(angle) * 14 + 3);
+    }
+  });
 }
 
 function drawGroundGrid(ctx, camX, camY, w, h) {
@@ -1429,7 +1607,16 @@ function drawMinimap(level) {
   level.zombies.forEach(z => { ctx.fillRect(z.x * sx - 1, z.y * sy - 1, 2, 2); });
   if (level.stage.objectiveType === 'rescue') { ctx.fillStyle = '#e9e6d6'; level.survivors.forEach(s => { if (!s.rescued) ctx.fillRect(s.x * sx - 1.5, s.y * sy - 1.5, 3, 3); }); }
   if (level.npc && !level.npc.delivered) { ctx.fillStyle = '#e9e6d6'; ctx.fillRect(level.npc.x * sx - 2, level.npc.y * sy - 2, 4, 4); }
+  if (level.heli && level.heli.active) {
+    ctx.fillStyle = level.heli.isBoss ? '#ff5050' : '#e0b13f';
+    const hs = level.heli.isBoss ? 3 : 2;
+    ctx.beginPath(); ctx.arc(level.heli.x * sx, level.heli.y * sy, hs, 0, Math.PI * 2); ctx.fill();
+  }
   if (level.boss) { ctx.fillStyle = '#ff5050'; ctx.fillRect(level.boss.x * sx - 3, level.boss.y * sy - 3, 6, 6); }
+  if (level.miniRobots && level.boss && level.boss.active) {
+    ctx.fillStyle = '#e07a50';
+    level.miniRobots.forEach(m => { ctx.fillRect(m.x * sx - 1.5, m.y * sy - 1.5, 3, 3); });
+  }
   ctx.fillStyle = '#fff';
   const p = level.player; ctx.beginPath(); ctx.arc(p.x * sx, p.y * sy, 3, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(157,251,76,0.4)'; ctx.strokeRect(0, 0, 140, 140);
