@@ -135,17 +135,20 @@ const GAME = {
 
 /* --------------------------------- AUDIO ---------------------------------- */
 
-const MUSIC = new Audio('music.mp3');
+const MUSIC = new Audio('Musicrobot.mp3');
 MUSIC.loop = true;
 MUSIC.volume = GAME.settings.music / 100;
+let musicStarted = false;
 
 // Esta música solo debe sonar durante la batalla final contra el jefe robot.
 function startBossMusic() {
+  musicStarted = true;
   MUSIC.currentTime = 0;
   MUSIC.play().catch(() => { /* algunos navegadores requieren un gesto previo del usuario */ });
 }
 
 function stopBossMusic() {
+  musicStarted = false;
   MUSIC.pause();
   MUSIC.currentTime = 0;
 }
