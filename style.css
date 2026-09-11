@@ -58,6 +58,16 @@ html,body{
 .screen.active{ display:flex; }
 .screen.overlay-screen{ background: rgba(6,9,6,0.86); z-index:400; }
 
+/* El menú principal puede tener más botones de los que caben en pantallas
+   bajas; en vez de recentrarse y cortar contenido (overflow:hidden del
+   #app), permitimos que este screen específico haga scroll vertical y
+   alineamos arriba con espacio, así nunca desaparece un botón. */
+#screen-menu.screen{
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding: 5vh 0 5vh;
+}
+
 /* ---------- Menu ---------- */
 .menu-bg{
   position:absolute; inset:0;
