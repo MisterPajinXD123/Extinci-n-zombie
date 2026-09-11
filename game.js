@@ -129,6 +129,8 @@ const GAME = {
   input: { keys: {}, mouse: { x: 0, y: 0, down: false }, touch: { move: { x: 0, y: 0 }, fire: false, aiming: false, aimAngle: 0 } },
   paused: false,
   rafId: null,
+  phaseSkip: false,       // true mientras se viene del flujo "SALTO DE FASE"
+  phaseSkipTarget: 0,     // índice de etapa elegido en la pantalla de salto de fase
 };
 
 /* --------------------------------- AUDIO ---------------------------------- */
@@ -175,8 +177,20 @@ function handleAction(action) {
     case 'goto-character': buildCharacterGrid(); showScreen('screen-character'); break;
     case 'goto-settings': showScreen('screen-settings'); break;
     case 'goto-controls': showScreen('screen-controls'); break;
+    case 'goto-phase-select': buildPhaseGrid(); showScreen('screen-phase-select'); break;
+    case 'phase-select-continue':
+      GAME.phaseSkip = true;
+      GAME.stageIndex = GAME.phaseSkipTarget;
+      GAME.run = { rescued: 0, kills: 0, totalKills: 0 };
+      buildCharacterGrid();
+      showScreen('screen-character');
+      break;
     case 'back-menu': showScreen('screen-menu'); break;
-    case 'goto-vehicle': GAME.stageIndex = 0; GAME.run = { rescued: 0, kills: 0, totalKills: 0 }; openVehicleSelectForCurrentStage(); break;
+    case 'goto-vehicle':
+      if (!GAME.phaseSkip) { GAME.stageIndex = 0; GAME.run = { rescued: 0, kills: 0, totalKills: 0 }; }
+      GAME.phaseSkip = false;
+      openVehicleSelectForCurrentStage();
+      break;
     case 'vehicle-next': afterVehicleSelected(); break;
     case 'start-stage': beginStageIntro(); break;
     case 'stage-intro-continue': startStageGameplay(); break;
@@ -198,7 +212,40 @@ function fullReset() {
   GAME.run = { rescued: 0, kills: 0, totalKills: 0 };
   GAME.level = null;
   GAME.paused = false;
+  GAME.phaseSkip = false;
   stopBossMusic();
+}
+
+/* ---------------------------- SALTO DE FASE --------------------------------- */
+
+function buildPhaseGrid() {
+  const grid = document.getElementById('phase-grid');
+  grid.innerHTML = '';
+  document.getElementById('btn-phase-next').disabled = true;
+  STAGES.forEach((stage, i) => {
+    const card = document.createElement('div');
+    card.className = 'pick-card';
+    card.innerHTML = `<canvas class="pick-card-canvas" width="180" height="100"></canvas>
+      <div class="pick-card-name">ETAPA ${stage.id} — ${stage.name}</div>
+      <div class="pick-card-desc">${stage.objectiveText}</div>
+      <div class="pick-check">✔ SELECCIONADA</div>`;
+    const cv = card.querySelector('canvas');
+    drawPreview(cv, c => {
+      if (stage.onFoot) {
+        drawBoss(c, 90, 55, 1, 0, 0.95, false);
+      } else {
+        const v = VEHICLE_SETS[stage.vehicleSet][0];
+        drawVehicle(c, 90, 55, 0, v, 1.1);
+      }
+    });
+    card.addEventListener('click', () => {
+      grid.querySelectorAll('.pick-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      GAME.phaseSkipTarget = i;
+      document.getElementById('btn-phase-next').disabled = false;
+    });
+    grid.appendChild(card);
+  });
 }
 
 /* ---------------------------- SELECCIÓN: PERSONAJE ------------------------ */

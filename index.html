@@ -1,11 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#000000">
-<meta name="mobile-web-app-capable" content="yes">
-  
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>EXTINCIÓN ZOMBIE</title>
@@ -30,6 +25,7 @@
       <p class="game-subtitle">SOBREVIVE · RESCATA · EXTERMINA</p>
       <nav class="menu-buttons">
         <button class="btn btn-primary" data-action="goto-character">JUGAR</button>
+        <button class="btn btn-secondary" data-action="goto-phase-select">SALTO DE FASE</button>
         <button class="btn btn-secondary" data-action="goto-settings">CONFIGURACIÓN</button>
         <button class="btn btn-secondary" data-action="goto-controls">CONTROLES</button>
         <button class="btn btn-secondary" data-action="force-fullscreen" id="btn-fullscreen" style="display:none;">PANTALLA COMPLETA</button>
@@ -78,6 +74,17 @@
         <div class="control-row"><span class="key">ESC</span><span>Pausa</span></div>
       </div>
       <button class="btn btn-primary" data-action="back-menu">VOLVER</button>
+    </div>
+  </section>
+
+  <!-- ============ SALTO DE FASE ============ -->
+  <section id="screen-phase-select" class="screen">
+    <div class="panel-frame wide">
+      <h2 class="panel-title">SALTO DE FASE</h2>
+      <p class="panel-sub">Elige la etapa por la que quieres empezar a jugar</p>
+      <div class="pick-grid" id="phase-grid"></div>
+      <button class="btn btn-primary btn-next" data-action="phase-select-continue" disabled id="btn-phase-next">CONTINUAR</button>
+      <button class="btn btn-secondary" data-action="back-menu">VOLVER</button>
     </div>
   </section>
 
@@ -249,17 +256,5 @@
 </div>
 
 <script src="game.js"></script>
-
-<script>
-if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js")
-            .then(() => console.log("Service Worker registrado"))
-            .catch(error => console.error("Error al registrar Service Worker:", error));
-    });
-}
-</script> 
-  
 </body>
 </html>
-
