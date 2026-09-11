@@ -131,6 +131,27 @@ const GAME = {
   rafId: null,
 };
 
+/* --------------------------------- AUDIO ---------------------------------- */
+
+const MUSIC = new Audio('music.mp3');
+MUSIC.loop = true;
+MUSIC.volume = GAME.settings.music / 100;
+
+// Esta música solo debe sonar durante la batalla final contra el jefe robot.
+function startBossMusic() {
+  MUSIC.currentTime = 0;
+  MUSIC.play().catch(() => { /* algunos navegadores requieren un gesto previo del usuario */ });
+}
+
+function stopBossMusic() {
+  MUSIC.pause();
+  MUSIC.currentTime = 0;
+}
+
+function updateMusicVolume() {
+  MUSIC.volume = clamp(GAME.settings.music, 0, 100) / 100;
+}
+
 /* ------------------------------ NAVEGACIÓN UI ----------------------------- */
 
 function showScreen(id) {
@@ -177,6 +198,7 @@ function fullReset() {
   GAME.run = { rescued: 0, kills: 0, totalKills: 0 };
   GAME.level = null;
   GAME.paused = false;
+  stopBossMusic();
 }
 
 /* ---------------------------- SELECCIÓN: PERSONAJE ------------------------ */
@@ -629,6 +651,8 @@ function startStageGameplay() {
   updateWeaponSlotsUI();
   updateObjectiveUI();
 
+  if (stage.key === 'final') startBossMusic(); else stopBossMusic();
+
   let last = performance.now();
   cancelAnimationFrame(GAME.rafId);
   function loop(now) {
@@ -841,6 +865,16 @@ function setupInput() {
 
   document.getElementById('opt-touch').addEventListener('change', e => { GAME.settings.touch = e.target.checked; });
   document.getElementById('opt-shake').addEventListener('change', e => { GAME.settings.shake = e.target.checked; });
+  document.getElementById('opt-music').addEventListener('input', e => {
+    GAME.settings.music = Number(e.target.value);
+    updateMusicVolume();
+  });
+  document.getElementById('opt-sfx').addEventListener('input', e => { GAME.settings.sfx = Number(e.target.value); });
+
+  // Al volver a la pestaña, si el navegador pausó la música, la retomamos.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && musicStarted) MUSIC.play().catch(() => {});
+  });
 
   // Detecta automáticamente si es un dispositivo táctil (celular/tablet)
   // y activa los controles táctiles por defecto, sin que el jugador tenga
@@ -861,6 +895,8 @@ function resizeCanvas(canvas) {
 function togglePause(p) {
   GAME.paused = p;
   document.getElementById('screen-pause').classList.toggle('active', p);
+  const inFinalBattle = GAME.level && GAME.level.stage.key === 'final' && GAME.level.subPhase === 'play';
+  if (inFinalBattle) { if (p) MUSIC.pause(); else MUSIC.play().catch(() => {}); }
 }
 
 /* ------------------------------ INTERACCIÓN -------------------------------- */
@@ -1081,6 +1117,7 @@ function onPlayerDown(level) {
   document.getElementById('stage-fail-title').textContent = 'HAS CAÍDO';
   document.getElementById('stage-fail-sub').textContent = 'Fuiste derribado por los zombies.';
   cancelAnimationFrame(GAME.rafId);
+  stopBossMusic();
   showScreen('screen-stage-fail');
 }
 
@@ -1291,6 +1328,7 @@ function updateBoss(level, dt) {
     b.defeated = true;
     level.subPhase = 'bossDefeatedCutscene';
     level.cutsceneT = 0;
+    stopBossMusic();
   }
 }
 
