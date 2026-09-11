@@ -135,7 +135,7 @@ const GAME = {
 
 /* --------------------------------- AUDIO ---------------------------------- */
 
-const MUSIC = new Audio('Musicrobot.mp3');
+const MUSIC = new Audio('Music_robot.mp3');
 MUSIC.loop = true;
 MUSIC.volume = GAME.settings.music / 100;
 let musicStarted = false;
