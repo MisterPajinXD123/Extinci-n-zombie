@@ -8,7 +8,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<script>
+  // Genera automáticamente una versión nueva en cada carga de página, así el
+  // navegador nunca sirve una copia vieja en caché de style.css.
+  // Usamos document.write (no appendChild) para que se inserte en el mismo
+  // punto del HTML mientras se está leyendo la página, igual que si la
+  // etiqueta estuviera escrita a mano — así no se rompe el orden de carga.
+  document.write('<link rel="stylesheet" href="style.css?v=' + Date.now() + '">');
+</script>
 </head>
 <body>
 
@@ -256,11 +263,10 @@
 </div>
 
 <script>
-  const script = document.createElement('script');
-  // Genera un parámetro único en cada carga de página
-  script.src = 'game.js?v=' + new Date().getTime();
-  document.body.appendChild(script);
+  // Mismo truco para game.js: versión automática con la hora exacta, pero
+  // insertada con document.write para que se cargue en el momento correcto
+  // y el juego siga escuchando bien el evento DOMContentLoaded.
+  document.write('<scr' + 'ipt src="game.js?v=' + Date.now() + '"><\/scr' + 'ipt>');
 </script>
-
 </body>
 </html>
