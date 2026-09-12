@@ -95,7 +95,7 @@ const STAGES = [
     objectiveType: 'airBoss',
     zombieTypes: ['walker', 'gunner'],
     palette: { ground: '#1a2130', accent: '#232c40' },
-    objectiveText: 'Sobrevive a los helicópteros (algunos zombies también disparan) y derrota al helicóptero principal.',
+    objectiveText: 'Sobrevive a los helicópteros (algunos zombies también disparan) y derrota al helicóptero principal. Luego recoge la poción (presiona E) y dirígete a la zona segura.',
   },
   {
     id: 4, key: 'animal', name: 'ANIMALES',
@@ -985,6 +985,13 @@ function tryInteract() {
   if (stage.objectiveType === 'findNPC' && level.npc && !level.npc.found) {
     if (dist(p.x, p.y, level.npc.x, level.npc.y) < 46) { level.npc.found = true; level.npc.following = true; }
   }
+  if (stage.objectiveType === 'airBoss' && !level.hasPotion) {
+    const potion = level.pickups.find(pk => pk.kind === 'potion' && !pk.taken);
+    if (potion && dist(p.x, p.y, potion.x, potion.y) < 46) {
+      potion.taken = true;
+      level.hasPotion = true;
+    }
+  }
 }
 
 /* --------------------------------- UPDATE ---------------------------------- */
@@ -1063,6 +1070,10 @@ function updatePlayerMovement(level, dt) {
   }
   if (level.stage.objectiveType === 'findNPC' && level.npc && !level.npc.found) {
     if (dist(p.x, p.y, level.npc.x, level.npc.y) < 46) level.interactTarget = level.npc;
+  }
+  if (level.stage.objectiveType === 'airBoss' && !level.hasPotion) {
+    const potion = level.pickups.find(pk => pk.kind === 'potion' && !pk.taken);
+    if (potion && dist(p.x, p.y, potion.x, potion.y) < 46) level.interactTarget = potion;
   }
 }
 
@@ -1221,12 +1232,13 @@ function updatePickups(level) {
   const target = level.vehicle || level.player;
   level.pickups.forEach(pk => {
     if (pk.taken) return;
+    // La poción no se recoge automáticamente: hay que presionar E (ver tryInteract).
+    if (pk.kind === 'potion') return;
     if (dist(pk.x, pk.y, target.x, target.y) < 34) {
       pk.taken = true;
       if (pk.kind === 'resource' && level.stage.canRepair && level.vehicle) {
         level.vehicle.hp = Math.min(level.vehicle.maxHp, level.vehicle.hp + level.vehicle.maxHp * 0.22);
       }
-      if (pk.kind === 'potion') { level.hasPotion = true; }
     }
   });
 }
@@ -1502,7 +1514,10 @@ function checkStageCompletion(level) {
     done = allRescued && inSafeZone;
   }
   if (stage.objectiveType === 'findNPC') done = !!(level.npc && level.npc.delivered);
-  if (stage.objectiveType === 'airBoss') done = !!level.airBossDone && !!level.hasPotion;
+  if (stage.objectiveType === 'airBoss') {
+    const inSafeZone = level.hasPotion && dist(level.player.x, level.player.y, level.safeZone.x, level.safeZone.y) < level.safeZone.r;
+    done = !!level.airBossDone && !!level.hasPotion && inSafeZone;
+  }
   if (stage.objectiveType === 'survive') {
     const killTargetReached = level.killsThisStage >= stage.surviveKillTarget;
     const inSafeZone = killTargetReached && dist(level.player.x, level.player.y, level.safeZone.x, level.safeZone.y) < level.safeZone.r;
@@ -1528,6 +1543,7 @@ function runBossCutscene(level) {
 
 function advanceStage() {
   cancelAnimationFrame(GAME.rafId);
+  stopBossMusic();
   const isLast = GAME.stageIndex >= STAGES.length - 1;
   if (isLast) { return; } // el final se gestiona vía la poción
   GAME.stageIndex++;
@@ -1836,7 +1852,9 @@ function updateHUD(level) {
   } else if (level.stage.objectiveType === 'findNPC') {
     document.getElementById('hud-objective').textContent = level.npc.delivered ? 'Científico a salvo' : level.npc.following ? 'Escolta al científico a la zona segura' : 'Encuentra al científico';
   } else if (level.stage.objectiveType === 'airBoss') {
-    document.getElementById('hud-objective').textContent = level.hasPotion ? 'Recoge la poción y continúa' : 'Sobrevive y derrota al helicóptero principal';
+    document.getElementById('hud-objective').textContent = level.hasPotion
+      ? '¡Ve a la zona segura!'
+      : level.airBossDone ? 'Presiona E para recoger la poción' : 'Sobrevive y derrota al helicóptero principal';
   } else if (level.stage.objectiveType === 'boss') {
     document.getElementById('hud-objective').textContent = level.boss.active ? 'Derrota al jefe final' : 'Avanza hacia el norte del mapa';
   }
