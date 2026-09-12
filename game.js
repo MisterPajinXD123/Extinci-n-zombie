@@ -135,13 +135,28 @@ const GAME = {
 
 /* --------------------------------- AUDIO ---------------------------------- */
 
-const MUSIC = new Audio('Music_robot.mp3');
+// Música específica por etapa: agrega aquí más entradas si quieres música
+// en otras fases (la clave es el "key" de la etapa, ver STAGES más arriba).
+const STAGE_MUSIC = {
+  absurd: 'Avion.mp3',        // Fase 3 — VEHÍCULOS ABSURDOS
+  final: 'Music_robot.mp3',   // Fase 5 — BATALLA FINAL
+};
+
+const MUSIC = new Audio();
 MUSIC.loop = true;
 MUSIC.volume = GAME.settings.music / 100;
 let musicStarted = false;
+let currentMusicKey = null;
 
-// Esta música solo debe sonar durante la batalla final contra el jefe robot.
-function startBossMusic() {
+// Arranca la música correspondiente a la etapa (si tiene una asignada en
+// STAGE_MUSIC); si la etapa no tiene música propia, detiene la que sonaba.
+function startBossMusic(stageKey) {
+  const track = STAGE_MUSIC[stageKey];
+  if (!track) { stopBossMusic(); return; }
+  if (currentMusicKey !== stageKey) {
+    MUSIC.src = track;
+    currentMusicKey = stageKey;
+  }
   musicStarted = true;
   MUSIC.currentTime = 0;
   MUSIC.play().catch(() => { /* algunos navegadores requieren un gesto previo del usuario */ });
@@ -149,6 +164,7 @@ function startBossMusic() {
 
 function stopBossMusic() {
   musicStarted = false;
+  currentMusicKey = null;
   MUSIC.pause();
   MUSIC.currentTime = 0;
 }
@@ -701,7 +717,7 @@ function startStageGameplay() {
   updateWeaponSlotsUI();
   updateObjectiveUI();
 
-  if (stage.key === 'final') startBossMusic(); else stopBossMusic();
+  if (STAGE_MUSIC[stage.key]) startBossMusic(stage.key); else stopBossMusic();
 
   let last = performance.now();
   cancelAnimationFrame(GAME.rafId);
@@ -945,8 +961,8 @@ function resizeCanvas(canvas) {
 function togglePause(p) {
   GAME.paused = p;
   document.getElementById('screen-pause').classList.toggle('active', p);
-  const inFinalBattle = GAME.level && GAME.level.stage.key === 'final' && GAME.level.subPhase === 'play';
-  if (inFinalBattle) { if (p) MUSIC.pause(); else MUSIC.play().catch(() => {}); }
+  const hasStageMusic = GAME.level && STAGE_MUSIC[GAME.level.stage.key] && GAME.level.subPhase === 'play';
+  if (hasStageMusic) { if (p) MUSIC.pause(); else MUSIC.play().catch(() => {}); }
 }
 
 /* ------------------------------ INTERACCIÓN -------------------------------- */
