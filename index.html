@@ -255,6 +255,12 @@
 
 </div>
 
-<script src="game.js"></script>
+<script>
+  const script = document.createElement('script');
+  // Genera un parámetro único en cada carga de página
+  script.src = 'game.js?v=' + new Date().getTime();
+  document.body.appendChild(script);
+</script>
+
 </body>
 </html>
