@@ -169,8 +169,24 @@ function stopBossMusic() {
   MUSIC.currentTime = 0;
 }
 
+const MENU_MUSIC = new Audio('Menu.mp3');
+MENU_MUSIC.loop = true;
+MENU_MUSIC.volume = GAME.settings.music / 100;
+
+function startMenuMusic() {
+  if (!MENU_MUSIC.paused) return;
+  MENU_MUSIC.currentTime = 0;
+  MENU_MUSIC.play().catch(() => { /* se reintenta en el primer toque/click, ver más abajo */ });
+}
+
+function stopMenuMusic() {
+  MENU_MUSIC.pause();
+  MENU_MUSIC.currentTime = 0;
+}
+
 function updateMusicVolume() {
   MUSIC.volume = clamp(GAME.settings.music, 0, 100) / 100;
+  MENU_MUSIC.volume = clamp(GAME.settings.music, 0, 100) / 100;
 }
 
 /* ------------------------------ NAVEGACIÓN UI ----------------------------- */
@@ -179,6 +195,7 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   GAME.screen = id;
+  if (id === 'screen-menu') startMenuMusic(); else stopMenuMusic();
 }
 
 function bindMenuActions() {
@@ -1969,4 +1986,14 @@ document.addEventListener('DOMContentLoaded', () => {
   bindMenuActions();
   setupInput();
   showScreen('screen-menu');
+  // Los navegadores bloquean el autoplay de audio hasta el primer toque/click
+  // del usuario; si la música del menú no pudo arrancar sola al cargar la
+  // página, la reintentamos en cuanto haya cualquier primera interacción.
+  const unlockMenuMusic = () => {
+    if (GAME.screen === 'screen-menu') startMenuMusic();
+    window.removeEventListener('pointerdown', unlockMenuMusic);
+    window.removeEventListener('keydown', unlockMenuMusic);
+  };
+  window.addEventListener('pointerdown', unlockMenuMusic, { once: true });
+  window.addEventListener('keydown', unlockMenuMusic, { once: true });
 });
