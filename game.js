@@ -1010,6 +1010,7 @@ function update(dt) {
   updateFollowers(level, dt);
   updatePickups(level);
   if (stage.objectiveType === 'airBoss') updateHelis(level, dt);
+  if (level.miniPlanes) updateMiniPlanes(level, dt);
   if (stage.objectiveType === 'boss') updateBoss(level, dt);
   if (level.miniRobots) updateMiniRobots(level, dt);
   if (level.companion) updateCompanion(level, dt);
@@ -1143,6 +1144,12 @@ function updateBullets(level, dt) {
     if (level.heli && level.heli.active) {
       if (dist(b.x, b.y, level.heli.x, level.heli.y) < (level.heli.isBoss ? 54 : 24)) { level.heli.hp -= b.dmg; level.heli.hit = 0.12; b.life = 0; }
     }
+    if (level.miniPlanes && !b.allyBullet) {
+      level.miniPlanes.forEach(m => {
+        if (!m.alive) return;
+        if (dist(b.x, b.y, m.x, m.y) < 18) { m.hp -= b.dmg; m.hit = 0.12; b.life = 0; }
+      });
+    }
   });
   level.bullets = level.bullets.filter(b => b.life > 0);
 
@@ -1250,19 +1257,30 @@ function updateHelis(level, dt) {
     level.heliTimer = rand(3, 5); level.helisSpawned++;
     const isBoss = level.helisSpawned >= 5;
     level.heli = {
-      x: rand(200, WORLD.w - 200), y: rand(200, WORLD.h - 200), hp: isBoss ? 420 : 60, maxHp: isBoss ? 420 : 60,
+      x: rand(200, WORLD.w - 200), y: rand(200, WORLD.h - 200), hp: isBoss ? 1300 : 60, maxHp: isBoss ? 1300 : 60,
       isBoss, active: true, cd: 1, hit: 0, vx: rand(-40, 40), vy: rand(-40, 40),
     };
-    if (level.heli.isBoss) { level.bossHeliActive = true; }
+    if (level.heli.isBoss) {
+      level.bossHeliActive = true;
+      // 10 aviones mini que escoltan al avión jefe y también disparan al jugador
+      level.miniPlanes = Array.from({ length: 10 }, (_, i) => {
+        const orbitAngle = (i / 10) * Math.PI * 2;
+        return {
+          x: level.heli.x + Math.cos(orbitAngle) * 130, y: level.heli.y + Math.sin(orbitAngle) * 130,
+          hp: 35, maxHp: 35, orbitAngle, orbitSpeed: rand(0.6, 1.0) * (Math.random() < 0.5 ? 1 : -1),
+          orbitR: rand(110, 165), angle: 0, cd: rand(0, 1.2), hit: 0, alive: true,
+        };
+      });
+    }
   }
   if (level.heli) {
     const h = level.heli; h.hit = Math.max(0, h.hit - dt);
     h.x = clamp(h.x + h.vx * dt, 100, WORLD.w - 100); h.y = clamp(h.y + h.vy * dt, 100, WORLD.h - 100);
     // el helicóptero jefe esquiva con movimientos más bruscos y frecuentes,
     // lo que lo hace más difícil de acertar con las balas del jugador.
-    const dashChance = h.isBoss ? 0.025 : 0.01;
+    const dashChance = h.isBoss ? 0.035 : 0.01;
     if (Math.random() < dashChance) {
-      const range = h.isBoss ? 95 : 50;
+      const range = h.isBoss ? 115 : 50;
       h.vx = rand(-range, range); h.vy = rand(-range, range);
     }
     h.cd -= dt;
@@ -1274,28 +1292,28 @@ function updateHelis(level, dt) {
       if (inRange && h.cd <= 0) {
         const hpPct = h.hp / h.maxHp;
         const phase = hpPct > 0.66 ? 1 : hpPct > 0.33 ? 2 : 3;
-        h.cd = phase === 1 ? 1.05 : phase === 2 ? 0.72 : 0.48;
+        h.cd = phase === 1 ? 0.85 : phase === 2 ? 0.58 : 0.38;
         const aimAngle = angleTo(h.x, h.y, target.x, target.y);
-        const bulletSpeed = 230 + phase * 25;
+        const bulletSpeed = 250 + phase * 30;
         const pattern = randi(0, 2); // cualquier tipo de bala cada vez: apuntada, abanico o volley circular
         if (pattern === 0) {
           // ráfaga apuntada
-          const shots = 2 + phase;
+          const shots = 3 + phase;
           for (let i = 0; i < shots; i++) {
             const a = aimAngle + rand(-0.08, 0.08);
             level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 9, life: 2.6 });
           }
         } else if (pattern === 1) {
           // abanico amplio hacia el jugador
-          const count = 5 + phase;
-          const arc = 0.95;
+          const count = 6 + phase;
+          const arc = 1.05;
           for (let i = 0; i < count; i++) {
             const a = aimAngle - arc / 2 + (arc / (count - 1)) * i;
             level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 8, life: 2.6 });
           }
         } else {
           // volley circular en todas direcciones
-          const count = 8 + phase * 2;
+          const count = 10 + phase * 2;
           for (let i = 0; i < count; i++) {
             const a = (Math.PI * 2 / count) * i;
             level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed * 0.85, vy: Math.sin(a) * bulletSpeed * 0.85, dmg: 7, life: 2.9 });
@@ -1309,7 +1327,11 @@ function updateHelis(level, dt) {
     }
 
     if (h.hp <= 0) {
-      if (h.isBoss) { level.pickups.push({ x: h.x, y: h.y, kind: 'potion', taken: false, r: 20 }); level.airBossDone = true; }
+      if (h.isBoss) {
+        level.pickups.push({ x: h.x, y: h.y, kind: 'potion', taken: false, r: 20 });
+        level.airBossDone = true;
+        level.miniPlanes = [];
+      }
       level.heli = null;
     }
   }
@@ -1320,6 +1342,37 @@ function updateHelis(level, dt) {
       document.getElementById('hud-boss-hp').style.width = clamp(level.heli.hp / level.heli.maxHp * 100, 0, 100) + '%';
     }
   }
+}
+
+// Los 10 aviones mini orbitan alrededor del avión jefe, lo siguen si se mueve,
+// y también disparan al jugador. Dejan de actuar y se limpian cuando el jefe muere.
+function updateMiniPlanes(level, dt) {
+  if (!level.miniPlanes || !level.miniPlanes.length) return;
+  const h = level.heli;
+  if (!h || !h.isBoss || h.hp <= 0) { level.miniPlanes = []; return; }
+  const target = level.vehicle || level.player;
+  level.miniPlanes.forEach(m => {
+    if (!m.alive) return;
+    m.hit = Math.max(0, m.hit - dt);
+    m.orbitAngle += m.orbitSpeed * dt;
+    m.x = lerp(m.x, h.x + Math.cos(m.orbitAngle) * m.orbitR, 0.12);
+    m.y = lerp(m.y, h.y + Math.sin(m.orbitAngle) * m.orbitR, 0.12);
+    m.angle = angleTo(m.x, m.y, target.x, target.y);
+    m.cd -= dt;
+    const d = dist(m.x, m.y, target.x, target.y);
+    if (d < 400 && m.cd <= 0) {
+      m.cd = rand(1.2, 1.8);
+      level.enemyBullets.push({ x: m.x, y: m.y, vx: Math.cos(m.angle) * 220, vy: Math.sin(m.angle) * 220, dmg: 6, life: 2.4 });
+    }
+  });
+  level.miniPlanes.forEach(m => {
+    if (m.alive && m.hp <= 0) {
+      m.alive = false;
+      spawnDeathParticles(level, m.x, m.y);
+      GAME.run.kills++; GAME.run.totalKills++;
+    }
+  });
+  level.miniPlanes = level.miniPlanes.filter(m => m.alive);
 }
 
 /* --------- Jefe final (etapa 5) --------- */
@@ -1662,6 +1715,7 @@ function render() {
   level.zombies.forEach(z => { if (z.type === 'rider') drawRiderZombie(ctx, z.x, z.y, z.angle); else drawZombie(ctx, z.x, z.y, z.angle, z.type, z.hit); });
 
   if (level.heli && level.heli.active) drawHeli(ctx, level.heli.x, level.heli.y, level.time, level.heli.hit, level.heli.isBoss);
+  if (level.miniPlanes) level.miniPlanes.forEach(m => { if (m.alive) drawHeli(ctx, m.x, m.y, level.time, m.hit, false); });
   if (level.boss && level.boss.active && !level.boss.defeated) drawBoss(ctx, level.boss.x, level.boss.y, level.boss.hp / level.boss.maxHp, level.boss.hit || 0, 1, level.boss.invulnerable);
   if (level.miniRobots && level.boss && level.boss.active && !level.boss.defeated) level.miniRobots.forEach(m => drawBoss(ctx, m.x, m.y, m.hp / m.maxHp, m.hit, 0.42));
 
@@ -1793,6 +1847,10 @@ function drawMinimap(level) {
     ctx.fillStyle = level.heli.isBoss ? '#ff5050' : '#e0b13f';
     const hs = level.heli.isBoss ? 3 : 2;
     ctx.beginPath(); ctx.arc(level.heli.x * sx, level.heli.y * sy, hs, 0, Math.PI * 2); ctx.fill();
+  }
+  if (level.miniPlanes) {
+    ctx.fillStyle = '#e0b13f';
+    level.miniPlanes.forEach(m => { if (m.alive) ctx.fillRect(m.x * sx - 1, m.y * sy - 1, 2, 2); });
   }
   if (level.boss) { ctx.fillStyle = '#ff5050'; ctx.fillRect(level.boss.x * sx - 3, level.boss.y * sy - 3, 6, 6); }
   if (level.miniRobots && level.boss && level.boss.active) {
