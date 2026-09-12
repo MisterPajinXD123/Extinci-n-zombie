@@ -213,6 +213,7 @@ function handleAction(action) {
     case 'goto-character': buildCharacterGrid(); showScreen('screen-character'); break;
     case 'goto-settings': showScreen('screen-settings'); break;
     case 'goto-controls': showScreen('screen-controls'); break;
+    case 'goto-credits': showScreen('screen-credits'); break;
     case 'goto-phase-select': buildPhaseGrid(); showScreen('screen-phase-select'); break;
     case 'phase-select-continue':
       GAME.phaseSkip = true;

@@ -167,6 +167,22 @@ html,body{
   white-space:nowrap;
 }
 
+.credits-btn{
+  position:fixed; top:16px; right:16px; z-index:5;
+  background:rgba(10,14,9,0.5); border:1px solid var(--steel); color: var(--steel-light);
+  font-family: var(--font-display); font-size:0.65rem; letter-spacing:2px;
+  padding:9px 16px; cursor:pointer; text-transform:uppercase;
+  clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px);
+}
+.credits-btn:hover{ color: var(--toxic); border-color: var(--toxic-dim); }
+
+.credits-list{ display:flex; flex-direction:column; gap:16px; margin: 24px 0 30px; text-align:left; }
+.credits-row{ display:flex; justify-content:space-between; align-items:baseline; gap:16px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px; flex-wrap:wrap; }
+.credits-role{ font-size:0.7rem; letter-spacing:2px; color: var(--steel-light); text-transform:uppercase; }
+.credits-name{ font-size:1rem; color: var(--bone); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.credits-ig{ font-size:0.7rem; color: var(--toxic); text-decoration:none; border:1px solid var(--toxic-dim); padding:4px 10px; letter-spacing:1px; }
+.credits-ig:hover{ background:rgba(157,251,76,0.1); }
+
 /* ---------- Panels ---------- */
 .panel-frame{
   background: linear-gradient(180deg, rgba(19,26,18,0.96), rgba(10,14,9,0.98));
@@ -354,6 +370,7 @@ html,body{
   .touch-weapon{ bottom:196px; right:14px; }
   .end-scene{ width:88vw; height:auto; }
   .menu-buttons{ margin-top:32px; }
+  .credits-btn{ top:10px; right:10px; font-size:0.55rem; padding:7px 12px; }
 }
 
 @media (max-height: 480px) and (orientation: landscape){
