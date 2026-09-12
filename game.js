@@ -562,7 +562,7 @@ function drawWeaponIcon(ctx, x, y, w) {
   ctx.restore();
 }
 
-function drawHeli(ctx, x, y, t, hit, isBoss) {
+function drawHeli(ctx, x, y, t, hit, isBoss, shielded) {
   ctx.save(); ctx.translate(x, y);
   const scale = isBoss ? 2.4 : 1;
   ctx.scale(scale, scale);
@@ -571,6 +571,12 @@ function drawHeli(ctx, x, y, t, hit, isBoss) {
     const pulse = 1 + Math.sin(t * 4) * 0.08;
     ctx.strokeStyle = 'rgba(209,39,45,0.5)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0, 0, 34 * pulse, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (shielded) {
+    // escudo azul mientras sigan vivos los aviones mini escolta
+    const shieldPulse = 1 + Math.sin(Date.now() / 180) * 0.06;
+    ctx.strokeStyle = 'rgba(120,190,255,0.65)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, 44 * shieldPulse, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, 60, 22, 8, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = hit > 0 ? '#fff' : (isBoss ? '#4a2224' : '#3a4038');
@@ -1142,7 +1148,10 @@ function updateBullets(level, dt) {
       });
     }
     if (level.heli && level.heli.active) {
-      if (dist(b.x, b.y, level.heli.x, level.heli.y) < (level.heli.isBoss ? 54 : 24)) { level.heli.hp -= b.dmg; level.heli.hit = 0.12; b.life = 0; }
+      if (dist(b.x, b.y, level.heli.x, level.heli.y) < (level.heli.isBoss ? 54 : 24)) {
+        b.life = 0;
+        if (!(level.heli.isBoss && level.heli.shielded)) { level.heli.hp -= b.dmg; level.heli.hit = 0.12; }
+      }
     }
     if (level.miniPlanes && !b.allyBullet) {
       level.miniPlanes.forEach(m => {
@@ -1192,6 +1201,7 @@ function onVehicleDestroyed(level) {
   document.getElementById('stage-fail-title').textContent = 'VEHÍCULO DESTRUIDO';
   document.getElementById('stage-fail-sub').textContent = 'Tu montura ha caído. La etapa se reinicia.';
   cancelAnimationFrame(GAME.rafId);
+  stopBossMusic();
   showScreen('screen-stage-fail');
 }
 
@@ -1258,7 +1268,7 @@ function updateHelis(level, dt) {
     const isBoss = level.helisSpawned >= 5;
     level.heli = {
       x: rand(200, WORLD.w - 200), y: rand(200, WORLD.h - 200), hp: isBoss ? 1300 : 60, maxHp: isBoss ? 1300 : 60,
-      isBoss, active: true, cd: 1, hit: 0, vx: rand(-40, 40), vy: rand(-40, 40),
+      isBoss, active: true, cd: 1, hit: 0, vx: rand(-40, 40), vy: rand(-40, 40), shielded: isBoss,
     };
     if (level.heli.isBoss) {
       level.bossHeliActive = true;
@@ -1338,7 +1348,9 @@ function updateHelis(level, dt) {
   if (document.getElementById('hud-boss')) {
     document.getElementById('hud-boss').classList.toggle('show', !!(level.heli && level.heli.isBoss));
     if (level.heli && level.heli.isBoss) {
-      document.getElementById('hud-boss-label').textContent = 'HELICÓPTERO PRINCIPAL';
+      document.getElementById('hud-boss-label').textContent = level.heli.shielded
+        ? 'HELICÓPTERO PRINCIPAL — ESCUDO ACTIVO (elimina a los mini aviones)'
+        : 'HELICÓPTERO PRINCIPAL';
       document.getElementById('hud-boss-hp').style.width = clamp(level.heli.hp / level.heli.maxHp * 100, 0, 100) + '%';
     }
   }
@@ -1373,6 +1385,7 @@ function updateMiniPlanes(level, dt) {
     }
   });
   level.miniPlanes = level.miniPlanes.filter(m => m.alive);
+  if (h.isBoss && h.shielded && level.miniPlanes.length === 0) h.shielded = false;
 }
 
 /* --------- Jefe final (etapa 5) --------- */
@@ -1714,7 +1727,7 @@ function render() {
 
   level.zombies.forEach(z => { if (z.type === 'rider') drawRiderZombie(ctx, z.x, z.y, z.angle); else drawZombie(ctx, z.x, z.y, z.angle, z.type, z.hit); });
 
-  if (level.heli && level.heli.active) drawHeli(ctx, level.heli.x, level.heli.y, level.time, level.heli.hit, level.heli.isBoss);
+  if (level.heli && level.heli.active) drawHeli(ctx, level.heli.x, level.heli.y, level.time, level.heli.hit, level.heli.isBoss, level.heli.shielded);
   if (level.miniPlanes) level.miniPlanes.forEach(m => { if (m.alive) drawHeli(ctx, m.x, m.y, level.time, m.hit, false); });
   if (level.boss && level.boss.active && !level.boss.defeated) drawBoss(ctx, level.boss.x, level.boss.y, level.boss.hp / level.boss.maxHp, level.boss.hit || 0, 1, level.boss.invulnerable);
   if (level.miniRobots && level.boss && level.boss.active && !level.boss.defeated) level.miniRobots.forEach(m => drawBoss(ctx, m.x, m.y, m.hp / m.maxHp, m.hit, 0.42));
