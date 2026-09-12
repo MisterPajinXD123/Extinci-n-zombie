@@ -298,20 +298,21 @@ html,body{
 .touch-stick{ position:absolute; left:26px; bottom:26px; width:110px; height:110px; border-radius:50%; background:rgba(157,251,76,0.08); border:2px solid var(--steel-light); pointer-events:auto; }
 .touch-stick-nub{ position:absolute; width:46px; height:46px; border-radius:50%; background:rgba(157,251,76,0.35); left:32px; top:32px; }
 
-/* Zona derecha para apuntar+disparar: captura el toque donde sea que lo hagas
-   y dibuja el joystick ahí mismo (estilo twin-stick shooter). */
+/* Zona derecha para apuntar+disparar: al tocar en cualquier parte de esta
+   zona se dispara y se apunta, pero el joystick visual queda SIEMPRE fijo
+   en su posición (abajo a la derecha), como un botón de disparo fijo. */
 .touch-aim-zone{ position:absolute; right:0; top:0; width:52%; height:100%; pointer-events:auto; z-index:1; }
 .touch-aim-stick{
-  position:absolute; width:110px; height:110px; border-radius:50%;
-  background:rgba(209,39,45,0.08); border:2px solid var(--blood-dim);
-  pointer-events:none; opacity:0; transition:opacity .1s ease; z-index:2;
+  position:absolute; right:20px; bottom:20px; width:120px; height:120px; border-radius:50%;
+  background:rgba(209,39,45,0.1); border:2px solid var(--blood-dim);
+  pointer-events:none; opacity:1; z-index:2; transition:background .1s ease;
 }
-.touch-aim-stick.show{ opacity:1; }
-.touch-aim-nub{ position:absolute; width:46px; height:46px; border-radius:50%; background:rgba(209,39,45,0.4); left:32px; top:32px; }
+.touch-aim-stick.show{ background:rgba(209,39,45,0.22); }
+.touch-aim-nub{ position:absolute; width:50px; height:50px; border-radius:50%; background:rgba(209,39,45,0.45); left:35px; top:35px; }
 
 .touch-btn{ position:absolute; width:56px; height:56px; border-radius:50%; background:rgba(209,39,45,0.25); border:2px solid var(--blood-dim); color: var(--bone); font-size:1.2rem; pointer-events:auto; z-index:3; }
-.touch-interact{ right:20px; bottom:100px; background:rgba(157,251,76,0.2); border-color: var(--toxic-dim); font-family: var(--font-display); }
-.touch-weapon{ right:20px; bottom:168px; font-size:1.5rem; }
+.touch-interact{ right:20px; bottom:158px; background:rgba(157,251,76,0.2); border-color: var(--toxic-dim); font-family: var(--font-display); }
+.touch-weapon{ right:20px; bottom:226px; font-size:1.5rem; }
 .touch-pause{ position:absolute; top:16px; left:50%; transform:translateX(-50%); width:44px; height:44px; font-size:0.85rem; background:rgba(10,14,9,0.5); }
 
 /* ---------- Potion ---------- */
@@ -342,9 +343,10 @@ html,body{
   .hud-minimap{ transform: scale(0.7); transform-origin: bottom right; }
   .weapon-slot{ width:42px; height:42px; font-size:0.55rem; }
   .touch-stick{ width:96px; height:96px; }
+  .touch-aim-stick{ width:104px; height:104px; right:14px; bottom:14px; }
   .touch-btn{ width:50px; height:50px; }
-  .touch-interact{ bottom:88px; right:14px; }
-  .touch-weapon{ bottom:148px; right:14px; }
+  .touch-interact{ bottom:136px; right:14px; }
+  .touch-weapon{ bottom:196px; right:14px; }
   .end-scene{ width:88vw; height:auto; }
   .menu-buttons{ margin-top:32px; }
 }

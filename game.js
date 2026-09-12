@@ -886,9 +886,9 @@ function setupInput() {
     }
   });
 
-  // joystick de apuntar/disparar: aparece donde toques dentro de la zona
-  // derecha de la pantalla; arrastrar define el ángulo de disparo y
-  // mantener presionado dispara sin soltar.
+  // joystick de apuntar/disparar: queda SIEMPRE fijo en su lugar (abajo a la
+  // derecha); tocar en cualquier parte de la zona derecha empieza a disparar,
+  // y arrastrar desde ahí define el ángulo de disparo sin soltar.
   const aimZone = document.getElementById('touch-aim-zone');
   const aimStick = document.getElementById('touch-aim-stick');
   const aimNub = document.getElementById('touch-aim-nub');
@@ -897,12 +897,15 @@ function setupInput() {
     e.preventDefault();
     const t = e.changedTouches[0];
     aimId = t.identifier;
-    aimCenter = { x: t.clientX, y: t.clientY };
-    aimStick.style.left = (aimCenter.x - 55) + 'px';
-    aimStick.style.top = (aimCenter.y - 55) + 'px';
+    const r = aimStick.getBoundingClientRect();
+    aimCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     aimStick.classList.add('show');
-    aimNub.style.left = '32px'; aimNub.style.top = '32px';
+    aimNub.style.left = '35px'; aimNub.style.top = '35px';
     GAME.input.touch.fire = true;
+    // si el toque inicial ya trae un ángulo claro (dedo lejos del centro fijo),
+    // apuntamos ahí mismo en vez de esperar a que arrastre.
+    let dx0 = t.clientX - aimCenter.x, dy0 = t.clientY - aimCenter.y;
+    if (Math.hypot(dx0, dy0) > 6) { GAME.input.touch.aimAngle = Math.atan2(dy0, dx0); GAME.input.touch.aiming = true; }
   }, { passive: false });
   window.addEventListener('touchmove', e => {
     for (const t of e.changedTouches) {
@@ -910,7 +913,7 @@ function setupInput() {
       let dx = t.clientX - aimCenter.x, dy = t.clientY - aimCenter.y;
       const m = Math.hypot(dx, dy), max = 45;
       if (m > max) { dx = dx / m * max; dy = dy / m * max; }
-      aimNub.style.left = (32 + dx) + 'px'; aimNub.style.top = (32 + dy) + 'px';
+      aimNub.style.left = (35 + dx) + 'px'; aimNub.style.top = (35 + dy) + 'px';
       if (m > 6) { GAME.input.touch.aimAngle = Math.atan2(dy, dx); GAME.input.touch.aiming = true; }
     }
   }, { passive: false });
@@ -918,6 +921,7 @@ function setupInput() {
     for (const t of e.changedTouches) {
       if (t.identifier === aimId) {
         aimId = null; aimStick.classList.remove('show');
+        aimNub.style.left = '35px'; aimNub.style.top = '35px';
         GAME.input.touch.fire = false; GAME.input.touch.aiming = false;
       }
     }
