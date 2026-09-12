@@ -1150,7 +1150,13 @@ function updateBullets(level, dt) {
     if (level.heli && level.heli.active) {
       if (dist(b.x, b.y, level.heli.x, level.heli.y) < (level.heli.isBoss ? 54 : 24)) {
         b.life = 0;
-        if (!(level.heli.isBoss && level.heli.shielded)) { level.heli.hp -= b.dmg; level.heli.hit = 0.12; }
+        if (!(level.heli.isBoss && level.heli.shielded)) {
+          // A partir de la mitad de su vida, el jefe se vuelve el triple de
+          // resistente: recibe solo un tercio del daño de cada impacto.
+          const tough = level.heli.isBoss && level.heli.hp <= level.heli.maxHp * 0.5;
+          level.heli.hp -= tough ? b.dmg / 3 : b.dmg;
+          level.heli.hit = 0.12;
+        }
       }
     }
     if (level.miniPlanes && !b.allyBullet) {
@@ -1350,7 +1356,7 @@ function updateHelis(level, dt) {
     if (level.heli && level.heli.isBoss) {
       document.getElementById('hud-boss-label').textContent = level.heli.shielded
         ? 'HELICÓPTERO PRINCIPAL — ESCUDO ACTIVO (elimina a los mini aviones)'
-        : 'HELICÓPTERO PRINCIPAL';
+        : (level.heli.hp <= level.heli.maxHp * 0.5 ? 'HELICÓPTERO PRINCIPAL — BLINDAJE REFORZADO' : 'HELICÓPTERO PRINCIPAL');
       document.getElementById('hud-boss-hp').style.width = clamp(level.heli.hp / level.heli.maxHp * 100, 0, 100) + '%';
     }
   }
