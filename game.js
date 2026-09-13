@@ -225,7 +225,7 @@ function mpUpdateLobbyUI() {
     MP.players.forEach(p => {
       const row = document.createElement('div');
       row.className = 'mp-player-row' + (p.isHost ? ' is-host' : '');
-      row.textContent = p.name + (p.isHost ? ' — HOST' : '');
+      row.textContent = p.name + (p.isHost ? ' — Admin' : '');
       list.appendChild(row);
     });
   }
