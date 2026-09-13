@@ -62,6 +62,7 @@ html,body{
    bajas; en vez de recentrarse y cortar contenido (overflow:hidden del
    #app), permitimos que este screen específico haga scroll vertical y
    alineamos arriba con espacio, así nunca desaparece un botón. */
+
 #screen-menu.screen{
   justify-content: flex-start;
   overflow-y: auto;
@@ -69,6 +70,7 @@ html,body{
   /* el html/body tienen touch-action:none para el juego; sin esto, el
      scroll de este menú no respondía al dedo en celular y los botones
      de más abajo (SALTO DE FASE, CONTROLES, etc.) quedaban inalcanzables. */
+
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
@@ -105,6 +107,7 @@ html,body{
   position:relative;
   line-height:1;
 }
+
 .game-title::before{
   content: attr(data-text);
   position:absolute; left:0; top:0; width:100%;
@@ -114,6 +117,7 @@ html,body{
   opacity:0.7;
   animation: glitchTitle 5s infinite steps(1);
 }
+
 @keyframes glitchTitle{
   0%, 92%{ clip-path: inset(0 0 55% 0); transform: translate(-3px,-2px); }
   93%{ clip-path: inset(20% 0 10% 0); transform: translate(4px,1px); }
@@ -121,6 +125,7 @@ html,body{
   97%{ clip-path: inset(10% 0 70% 0); transform: translate(2px,-3px); }
   100%{ clip-path: inset(0 0 55% 0); transform: translate(-3px,-2px); }
 }
+
 .game-subtitle{
   font-family: var(--font-body);
   letter-spacing: 6px;
@@ -149,6 +154,7 @@ html,body{
   transition: all .15s ease;
   position:relative;
 }
+
 .btn:hover{ border-color: var(--toxic); color: var(--toxic); box-shadow: 0 0 16px var(--glow); transform: translateY(-1px); }
 .btn:active{ transform: translateY(1px); }
 .btn:disabled{ opacity:0.35; cursor:not-allowed; }
@@ -174,6 +180,7 @@ html,body{
   padding:9px 16px; cursor:pointer; text-transform:uppercase;
   clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px);
 }
+
 .credits-btn:hover{ color: var(--toxic); border-color: var(--toxic-dim); }
 
 .credits-list{ display:flex; flex-direction:column; gap:16px; margin: 24px 0 30px; text-align:left; }
@@ -197,6 +204,7 @@ html,body{
   overflow-y:auto;
   touch-action: pan-y;
 }
+
 .panel-frame.wide{ width: 900px; }
 .panel-title{
   font-family: var(--font-display);
@@ -205,6 +213,7 @@ html,body{
   color: var(--bone);
   margin-bottom: 8px;
 }
+
 .panel-sub{ color: var(--toxic-dim); font-size:0.85rem; margin-bottom: 22px; letter-spacing:1px; }
 .glow-text{ color: var(--toxic); text-shadow:0 0 14px var(--glow); }
 .glow-text-red{ color: var(--blood); text-shadow:0 0 14px rgba(209,39,45,0.5); }
@@ -217,6 +226,7 @@ html,body{
 .controls-grid{ display:flex; flex-direction:column; gap:12px; margin-bottom:30px; }
 .control-row{ display:flex; align-items:center; gap:18px; font-size:0.9rem; }
 .key{
+
   font-family: var(--font-display);
   background: var(--steel); color: var(--toxic);
   padding:6px 14px; min-width:120px; text-align:center;
@@ -228,6 +238,7 @@ html,body{
   display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 16px; margin: 10px 0 8px;
 }
+
 .pick-card{
   background: linear-gradient(180deg, #17201580, #0c110b80);
   border: 2px solid var(--steel);
@@ -236,6 +247,7 @@ html,body{
   transition: all .15s ease;
   clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
 }
+
 .pick-card:hover{ border-color: var(--toxic-dim); transform: translateY(-3px); }
 .pick-card.selected{ border-color: var(--toxic); box-shadow: 0 0 18px var(--glow); background: linear-gradient(180deg,#1c2a15,#101a0d); }
 .pick-card.selected .pick-check{ opacity:1; }
@@ -251,6 +263,7 @@ html,body{
   font-family: var(--font-display); font-size: clamp(2.4rem,7vw,5rem);
   letter-spacing:3px; margin: 6px 0 20px; text-shadow:0 0 22px var(--glow);
 }
+
 .stage-intro-obj{ color: var(--bone); opacity:0.85; margin-bottom:34px; font-size:0.95rem; max-width:600px; }
 @keyframes fadeIn{ from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:translateY(0);} }
 
@@ -290,6 +303,7 @@ html,body{
   display:flex; align-items:center; justify-content:center; font-size:0.62rem; text-align:center;
   color: var(--steel-light); position:relative; line-height:1.1; padding:2px;
 }
+
 .weapon-slot.active{ border-color: var(--toxic); color: var(--toxic); box-shadow:0 0 10px var(--glow); }
 .weapon-slot .slot-num{ position:absolute; top:1px; left:3px; font-size:0.55rem; opacity:0.6; }
 .ammo-readout{ font-size:0.7rem; color: var(--bone); background:rgba(10,14,9,0.6); padding:3px 8px; letter-spacing:1px; width:fit-content; }
@@ -310,6 +324,7 @@ html,body{
   background: rgba(10,14,9,0.75); border:1px solid var(--toxic-dim);
   padding:6px 14px; font-size:0.75rem; display:none;
 }
+
 .hud-interact.show{ display:block; }
 .key-mini{ background: var(--steel); color: var(--toxic); padding:1px 7px; border:1px solid var(--steel-light); font-family: var(--font-display); }
 
@@ -328,6 +343,7 @@ html,body{
   background:rgba(209,39,45,0.1); border:2px solid var(--blood-dim);
   pointer-events:none; opacity:1; z-index:2; transition:background .1s ease;
 }
+
 .touch-aim-stick.show{ background:rgba(209,39,45,0.22); }
 .touch-aim-nub{ position:absolute; width:50px; height:50px; border-radius:50%; background:rgba(209,39,45,0.45); left:35px; top:35px; }
 
@@ -401,9 +417,11 @@ html,body{
 }
 
 .credits-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
   align-items: center;
-  justify-content: space-between;
+  column-gap: 20px;
+
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 12px;
 }
