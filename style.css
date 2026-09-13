@@ -446,7 +446,7 @@ html,body{
 }
 
 .creador-name > span {
-  transform: translateX(-30px);
+  transform: translateX(0);
 }
 
 /* Fotos de los créditos */
