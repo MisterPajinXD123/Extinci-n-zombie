@@ -393,12 +393,13 @@ function mpMarkReady() {
     MP.readyChoices.host = choices;
     mpBroadcastWaitingStatus();
     mpUpdateWaitingUI(Object.keys(MP.readyChoices));
-    mpCheckAllReady();
+    if (mpCheckAllReady()) return; // ya arrancó la fase para todos; no pisar esa pantalla
+    showScreen('screen-mp-waiting');
   } else {
     MP.hostConn.send({ type: 'ready', choices });
     mpUpdateWaitingUI([]); // se actualiza en cuanto llegue el próximo 'waiting-status'
+    showScreen('screen-mp-waiting');
   }
-  showScreen('screen-mp-waiting');
 }
 
 function mpBroadcastWaitingStatus() {
@@ -421,9 +422,10 @@ function mpUpdateWaitingUI(readyIds) {
 }
 
 function mpCheckAllReady() {
-  if (Object.keys(MP.readyChoices).length !== MP.players.length) return;
+  if (Object.keys(MP.readyChoices).length !== MP.players.length) return false;
   MP.conns.forEach(c => { try { c.send({ type: 'begin-stage' }); } catch (e) { /* noop */ } });
   mpStartStageForAll();
+  return true;
 }
 
 function mpStartStageForAll() {
