@@ -195,6 +195,7 @@ function updateMusicVolume() {
    partida en sí — eso es el siguiente paso a construir sobre esta base. */
 
 const MP_PREFIX = 'extzmb-'; // prefijo para no chocar con otras apps que usen PeerJS
+const MP_COLORS = ['#ff5050', '#4c9dfb', '#9dfb4c', '#fbd94c', '#c74cfb', '#fb8f4c', '#4cfbe0', '#ffffff'];
 const MP = {
   peer: null,
   isHost: false,
@@ -203,7 +204,10 @@ const MP = {
   hostConn: null,  // DataConnection al host (solo en invitados)
   players: [],     // [{ id, name, isHost }]
   myName: '',
+  readyChoices: {}, // (host) { playerId: { character, vehicle, color, weapons } }
 };
+
+function mpIsActive() { return !!MP.peer; }
 
 function mpGenerateCode() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I, para que no se confundan al leerlo
@@ -263,6 +267,11 @@ function mpCreateRoom() {
         MP.players.push({ id: conn.peer, name: data.name, isHost: false });
         mpBroadcastPlayerList();
       }
+      if (data.type === 'ready') {
+        MP.readyChoices[conn.peer] = data.choices;
+        mpBroadcastWaitingStatus();
+        mpCheckAllReady();
+      }
     });
     conn.on('close', () => {
       MP.players = MP.players.filter(p => p.id !== conn.peer);
@@ -287,6 +296,9 @@ function mpJoinRoom(code) {
     conn.on('data', data => {
       if (data.type === 'players') { MP.code = code.toUpperCase(); MP.players = data.players; mpUpdateLobbyUI(); }
       if (data.type === 'full') { mpShowJoinError('Esa sala ya tiene 5 jugadores.'); mpLeaveRoom(); }
+      if (data.type === 'begin-selection') { buildCharacterGrid(); showScreen('screen-character'); }
+      if (data.type === 'waiting-status') { mpUpdateWaitingUI(data.readyIds); }
+      if (data.type === 'begin-stage') { mpStartStageForAll(); }
     });
     conn.on('error', () => { mpShowJoinError('No se pudo conectar. Revisá el código.'); mpLeaveRoom(); });
   });
@@ -311,6 +323,72 @@ function mpResetState() {
 function mpLeaveRoom() {
   mpResetState();
   showScreen('screen-menu');
+}
+
+/* --- Selección sincronizada: todos eligen y arrancan la fase 1 juntos --- */
+
+function mpBeginSelectionForAll() {
+  MP.readyChoices = {};
+  MP.conns.forEach(c => { try { c.send({ type: 'begin-selection' }); } catch (e) { /* noop */ } });
+  if (!GAME.phaseSkip) { GAME.stageIndex = 0; GAME.run = { rescued: 0, kills: 0, totalKills: 0 }; }
+  buildCharacterGrid();
+  showScreen('screen-character');
+}
+
+function mpMarkReady() {
+  const choices = {
+    character: GAME.selection.character,
+    vehicle: GAME.selection.vehicle,
+    companion: GAME.selection.companion,
+    vehicleColor: GAME.selection.vehicleColor,
+    weapons: GAME.selection.weapons,
+  };
+  if (MP.isHost) {
+    MP.readyChoices.host = choices;
+    mpBroadcastWaitingStatus();
+    mpUpdateWaitingUI(Object.keys(MP.readyChoices));
+    mpCheckAllReady();
+  } else {
+    MP.hostConn.send({ type: 'ready', choices });
+    mpUpdateWaitingUI([]); // se actualiza en cuanto llegue el próximo 'waiting-status'
+  }
+  showScreen('screen-mp-waiting');
+}
+
+function mpBroadcastWaitingStatus() {
+  const readyIds = Object.keys(MP.readyChoices);
+  MP.conns.forEach(c => { try { c.send({ type: 'waiting-status', readyIds }); } catch (e) { /* noop */ } });
+  mpUpdateWaitingUI(readyIds);
+}
+
+function mpUpdateWaitingUI(readyIds) {
+  const list = document.getElementById('mp-waiting-list');
+  if (!list) return;
+  list.innerHTML = '';
+  MP.players.forEach(p => {
+    const isReady = readyIds.includes(p.isHost ? 'host' : p.id);
+    const row = document.createElement('div');
+    row.className = 'mp-player-row' + (isReady ? ' is-host' : '');
+    row.textContent = p.name + (p.isHost ? ' — Admin' : '') + (isReady ? ' ✔' : ' — eligiendo...');
+    list.appendChild(row);
+  });
+}
+
+function mpCheckAllReady() {
+  if (Object.keys(MP.readyChoices).length !== MP.players.length) return;
+  MP.conns.forEach(c => { try { c.send({ type: 'begin-stage' }); } catch (e) { /* noop */ } });
+  mpStartStageForAll();
+}
+
+function mpStartStageForAll() {
+  beginStageIntro();
+  const continueBtn = document.querySelector('#screen-stage-intro [data-action="stage-intro-continue"]');
+  if (continueBtn) continueBtn.style.visibility = 'hidden';
+  const targetScreen = 'screen-stage-intro';
+  setTimeout(() => {
+    if (continueBtn) continueBtn.style.visibility = '';
+    if (GAME.screen === targetScreen) startStageGameplay();
+  }, 1800);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -355,7 +433,7 @@ function handleAction(action) {
     }
     case 'mp-leave': mpLeaveRoom(); break;
     case 'mp-start':
-      if (MP.isHost) alert('¡Conexión OK! Están todos en la sala: ' + MP.players.map(p => p.name).join(', ') + '.\n\nLa sincronización de la partida en sí (personajes, armas, y jugar todos juntos) es el siguiente paso a construir.');
+      if (MP.isHost) mpBeginSelectionForAll();
       break;
     case 'goto-phase-select': buildPhaseGrid(); showScreen('screen-phase-select'); break;
     case 'phase-select-continue':
@@ -372,7 +450,9 @@ function handleAction(action) {
       openVehicleSelectForCurrentStage();
       break;
     case 'vehicle-next': afterVehicleSelected(); break;
-    case 'start-stage': beginStageIntro(); break;
+    case 'start-stage':
+      if (mpIsActive()) mpMarkReady(); else beginStageIntro();
+      break;
     case 'stage-intro-continue': startStageGameplay(); break;
     case 'resume-game': togglePause(false); break;
     case 'restart-stage': togglePause(false); startStageGameplay(); break;
@@ -471,6 +551,31 @@ function buildVehicleGrid(stage) {
   const grid = document.getElementById('vehicle-grid');
   grid.innerHTML = '';
   document.getElementById('btn-vehicle-next').disabled = true;
+  GAME.selection.vehicleColor = null;
+  const colorPicker = document.getElementById('vehicle-color-picker');
+  const checkNextEnabled = () => {
+    const ok = !!GAME.selection.vehicle && (!mpIsActive() || !!GAME.selection.vehicleColor);
+    document.getElementById('btn-vehicle-next').disabled = !ok;
+  };
+  if (mpIsActive()) {
+    colorPicker.style.display = '';
+    const row = document.getElementById('color-swatch-row');
+    row.innerHTML = '';
+    MP_COLORS.forEach(color => {
+      const sw = document.createElement('div');
+      sw.className = 'color-swatch';
+      sw.style.background = color;
+      sw.addEventListener('click', () => {
+        row.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+        sw.classList.add('selected');
+        GAME.selection.vehicleColor = color;
+        checkNextEnabled();
+      });
+      row.appendChild(sw);
+    });
+  } else {
+    colorPicker.style.display = 'none';
+  }
   VEHICLE_SETS[stage.vehicleSet].forEach(v => {
     const card = document.createElement('div');
     card.className = 'pick-card';
@@ -484,7 +589,7 @@ function buildVehicleGrid(stage) {
       grid.querySelectorAll('.pick-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       GAME.selection.vehicle = v;
-      document.getElementById('btn-vehicle-next').disabled = false;
+      checkNextEnabled();
     });
     grid.appendChild(card);
   });

@@ -222,7 +222,20 @@
       <h2 class="panel-title" id="vehicle-title">ELIGE TU MONTURA</h2>
       <p class="panel-sub" id="vehicle-sub"></p>
       <div class="pick-grid" id="vehicle-grid"></div>
+      <div class="color-picker" id="vehicle-color-picker" style="display:none;">
+        <p class="color-picker-label">Elige un color para diferenciarte de los demás</p>
+        <div class="color-swatch-row" id="color-swatch-row"></div>
+      </div>
       <button class="btn btn-primary btn-next" data-action="vehicle-next" id="btn-vehicle-next" disabled>CONTINUAR</button>
+    </div>
+  </section>
+
+  <!-- ============ MULTIJUGADOR: ESPERANDO A LOS DEMÁS ============ -->
+  <section id="screen-mp-waiting" class="screen">
+    <div class="panel-frame">
+      <h2 class="panel-title">ESPERANDO JUGADORES</h2>
+      <p class="panel-sub">Ya elegiste tu personaje, vehículo y armas.</p>
+      <div class="mp-player-list" id="mp-waiting-list"></div>
     </div>
   </section>
 
