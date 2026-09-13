@@ -31,7 +31,7 @@
       <h1 class="game-title" data-text="EXTINCIÓN ZOMBIE">EXTINCIÓN ZOMBIE</h1>
       <p class="game-subtitle">SOBREVIVE · RESCATA · EXTERMINA</p>
       <nav class="menu-buttons">
-        <button class="btn btn-primary" data-action="goto-character">JUGAR</button>
+        <button class="btn btn-primary" data-action="goto-mode-select">JUGAR</button>
         <button class="btn btn-secondary" data-action="goto-phase-select">SALTO DE FASE</button>
         <button class="btn btn-secondary" data-action="goto-settings">CONFIGURACIÓN</button>
         <button class="btn btn-secondary" data-action="goto-controls">CONTROLES</button>
@@ -107,6 +107,47 @@
 
   </div>
 </section>
+
+  <!-- ============ SELECCIÓN DE MODO ============ -->
+  <section id="screen-mode-select" class="screen">
+    <div class="panel-frame">
+      <h2 class="panel-title">¿CÓMO QUERÉS JUGAR?</h2>
+      <nav class="menu-buttons">
+        <button class="btn btn-primary" data-action="goto-character">SOLITARIO</button>
+        <button class="btn btn-secondary" data-action="goto-mp-join">MULTIJUGADOR</button>
+      </nav>
+      <button class="btn btn-secondary" data-action="back-menu">VOLVER</button>
+    </div>
+  </section>
+
+  <!-- ============ MULTIJUGADOR: CREAR O UNIRSE ============ -->
+  <section id="screen-mp-join" class="screen">
+    <div class="panel-frame">
+      <h2 class="panel-title">MULTIJUGADOR</h2>
+      <p class="panel-sub">Hasta 5 jugadores, entre compu y celular.</p>
+      <nav class="menu-buttons">
+        <button class="btn btn-primary" data-action="mp-create">CREAR SALA</button>
+      </nav>
+      <div class="mp-join-row">
+        <input type="text" id="mp-code-input" maxlength="4" placeholder="CÓDIGO" class="mp-code-input" autocomplete="off" autocapitalize="characters">
+        <button class="btn btn-secondary" data-action="mp-join">UNIRSE</button>
+      </div>
+      <p class="mp-error" id="mp-join-error"></p>
+      <button class="btn btn-secondary" data-action="back-menu">VOLVER</button>
+    </div>
+  </section>
+
+  <!-- ============ SALA DE ESPERA MULTIJUGADOR ============ -->
+  <section id="screen-mp-lobby" class="screen">
+    <div class="panel-frame">
+      <h2 class="panel-title">SALA DE ESPERA</h2>
+      <p class="panel-sub">Código de sala: <span id="mp-room-code">—</span></p>
+      <p class="panel-sub" id="mp-status">Conectando...</p>
+      <div class="mp-player-list" id="mp-player-list"></div>
+      <button class="btn btn-primary" data-action="mp-start" id="btn-mp-start">INICIAR PARTIDA</button>
+      <button class="btn btn-secondary" data-action="mp-leave">SALIR DE LA SALA</button>
+    </div>
+  </section>
 
   <!-- ============ CONFIGURACIÓN ============ -->
   <section id="screen-settings" class="screen">
@@ -329,11 +370,14 @@
 
 </div>
 
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
 <script>
   // Mismo truco para game.js: versión automática con la hora exacta, pero
   // insertada con document.write para que se cargue en el momento correcto
   // y el juego siga escuchando bien el evento DOMContentLoaded.
   document.write('<scr' + 'ipt src="game.js?v=' + Date.now() + '"><\/scr' + 'ipt>');
 </script>
+
 </body>
 </html>

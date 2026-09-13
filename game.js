@@ -189,6 +189,131 @@ function updateMusicVolume() {
   MENU_MUSIC.volume = clamp(GAME.settings.music, 0, 100) / 100;
 }
 
+/* ------------------------------ MULTIJUGADOR -------------------------------
+   PASO 1: solo conexión y sala de espera (crear sala / unirse con código,
+   hasta 5 jugadores, entre compu y celular). Todavía NO sincroniza la
+   partida en sí — eso es el siguiente paso a construir sobre esta base. */
+
+const MP_PREFIX = 'extzmb-'; // prefijo para no chocar con otras apps que usen PeerJS
+const MP = {
+  peer: null,
+  isHost: false,
+  code: null,
+  conns: [],       // DataConnections a cada invitado (solo en el host)
+  hostConn: null,  // DataConnection al host (solo en invitados)
+  players: [],     // [{ id, name, isHost }]
+  myName: '',
+};
+
+function mpGenerateCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I, para que no se confundan al leerlo
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+function mpPromptName() {
+  const name = (prompt('Tu nombre de jugador (se ve en la sala):', '') || 'Jugador').trim();
+  return (name || 'Jugador').slice(0, 14);
+}
+
+function mpUpdateLobbyUI() {
+  const list = document.getElementById('mp-player-list');
+  if (list) {
+    list.innerHTML = '';
+    MP.players.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'mp-player-row' + (p.isHost ? ' is-host' : '');
+      row.textContent = p.name + (p.isHost ? ' — HOST' : '');
+      list.appendChild(row);
+    });
+  }
+  const codeEl = document.getElementById('mp-room-code');
+  if (codeEl) codeEl.textContent = MP.code || '—';
+  const startBtn = document.getElementById('btn-mp-start');
+  if (startBtn) startBtn.style.display = MP.isHost ? '' : 'none';
+  const statusEl = document.getElementById('mp-status');
+  if (statusEl) statusEl.textContent = `${MP.players.length} / 5 jugadores conectados`;
+}
+
+function mpBroadcastPlayerList() {
+  MP.conns.forEach(c => { try { c.send({ type: 'players', players: MP.players }); } catch (e) { /* noop */ } });
+  mpUpdateLobbyUI();
+}
+
+function mpCreateRoom() {
+  mpResetState();
+  MP.isHost = true;
+  MP.code = mpGenerateCode();
+  MP.myName = mpPromptName();
+  MP.players = [{ id: 'host', name: MP.myName, isHost: true }];
+  showScreen('screen-mp-lobby');
+  document.getElementById('mp-status').textContent = 'Creando sala...';
+  MP.peer = new Peer(MP_PREFIX + MP.code);
+  MP.peer.on('open', () => { mpUpdateLobbyUI(); });
+  MP.peer.on('connection', conn => {
+    if (MP.players.length >= 5) {
+      conn.on('open', () => { conn.send({ type: 'full' }); setTimeout(() => conn.close(), 300); });
+      return;
+    }
+    MP.conns.push(conn);
+    conn.on('data', data => {
+      if (data.type === 'join') {
+        MP.players.push({ id: conn.peer, name: data.name, isHost: false });
+        mpBroadcastPlayerList();
+      }
+    });
+    conn.on('close', () => {
+      MP.players = MP.players.filter(p => p.id !== conn.peer);
+      MP.conns = MP.conns.filter(c => c !== conn);
+      mpBroadcastPlayerList();
+    });
+  });
+  MP.peer.on('error', err => { mpShowJoinError('Error de conexión: ' + err.type); });
+}
+
+function mpJoinRoom(code) {
+  mpResetState();
+  MP.isHost = false;
+  MP.myName = mpPromptName();
+  showScreen('screen-mp-lobby');
+  document.getElementById('mp-status').textContent = 'Conectando a la sala...';
+  MP.peer = new Peer();
+  MP.peer.on('open', () => {
+    const conn = MP.peer.connect(MP_PREFIX + code.toUpperCase());
+    MP.hostConn = conn;
+    conn.on('open', () => { conn.send({ type: 'join', name: MP.myName }); });
+    conn.on('data', data => {
+      if (data.type === 'players') { MP.code = code.toUpperCase(); MP.players = data.players; mpUpdateLobbyUI(); }
+      if (data.type === 'full') { mpShowJoinError('Esa sala ya tiene 5 jugadores.'); mpLeaveRoom(); }
+    });
+    conn.on('error', () => { mpShowJoinError('No se pudo conectar. Revisá el código.'); mpLeaveRoom(); });
+  });
+  MP.peer.on('error', err => {
+    mpShowJoinError(err.type === 'peer-unavailable' ? 'No existe ninguna sala con ese código.' : ('Error de conexión: ' + err.type));
+    mpLeaveRoom();
+  });
+}
+
+function mpShowJoinError(msg) {
+  showScreen('screen-mp-join');
+  const el = document.getElementById('mp-join-error');
+  if (el) el.textContent = msg;
+}
+
+function mpResetState() {
+  if (MP.peer) { try { MP.peer.destroy(); } catch (e) { /* noop */ } }
+  MP.peer = null; MP.isHost = false; MP.code = null;
+  MP.conns = []; MP.hostConn = null; MP.players = [];
+}
+
+function mpLeaveRoom() {
+  mpResetState();
+  showScreen('screen-menu');
+}
+
+/* ---------------------------------------------------------------------- */
+
 /* ------------------------------ NAVEGACIÓN UI ----------------------------- */
 
 function showScreen(id) {
@@ -214,6 +339,19 @@ function handleAction(action) {
     case 'goto-settings': showScreen('screen-settings'); break;
     case 'goto-controls': showScreen('screen-controls'); break;
     case 'goto-credits': showScreen('screen-credits'); break;
+    case 'goto-mode-select': showScreen('screen-mode-select'); break;
+    case 'goto-mp-join': document.getElementById('mp-join-error').textContent = ''; showScreen('screen-mp-join'); break;
+    case 'mp-create': mpCreateRoom(); break;
+    case 'mp-join': {
+      const code = document.getElementById('mp-code-input').value.trim();
+      if (!code) { document.getElementById('mp-join-error').textContent = 'Ingresá un código de sala.'; break; }
+      mpJoinRoom(code);
+      break;
+    }
+    case 'mp-leave': mpLeaveRoom(); break;
+    case 'mp-start':
+      if (MP.isHost) alert('¡Conexión OK! Están todos en la sala: ' + MP.players.map(p => p.name).join(', ') + '.\n\nLa sincronización de la partida en sí (personajes, armas, y jugar todos juntos) es el siguiente paso a construir.');
+      break;
     case 'goto-phase-select': buildPhaseGrid(); showScreen('screen-phase-select'); break;
     case 'phase-select-continue':
       GAME.phaseSkip = true;

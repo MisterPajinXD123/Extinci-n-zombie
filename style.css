@@ -493,3 +493,15 @@ html,body{
 .credits-ig-btn .arrow {
   font-size: 12px;
 }
+
+/* ---------- Multijugador ---------- */
+.mp-join-row{ display:flex; gap:10px; justify-content:center; align-items:stretch; margin:22px 0 10px; }
+.mp-code-input{
+  background:#0e130d; border:1px solid var(--steel); color: var(--bone);
+  font-family: var(--font-display); font-size:1.15rem; letter-spacing:5px;
+  text-transform:uppercase; text-align:center; width:130px; padding:0 10px;
+}
+.mp-error{ color:#ff6b6b; font-size:0.75rem; min-height:1.2em; margin:4px 0 10px; }
+.mp-player-list{ display:flex; flex-direction:column; gap:8px; margin:20px 0; text-align:left; max-height:220px; overflow-y:auto; }
+.mp-player-row{ background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px 14px; font-size:0.85rem; letter-spacing:1px; display:flex; justify-content:space-between; }
+.mp-player-row.is-host{ border-color: var(--toxic-dim); color: var(--toxic); }
