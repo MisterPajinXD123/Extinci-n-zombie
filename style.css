@@ -419,21 +419,33 @@ html,body{
 .credits-name {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   color: #fff;
   font-family: 'Chakra Petch', sans-serif;
   font-weight: 600;
   font-size: 18px;
+  flex-wrap: nowrap;
 }
 
-/* Fotos redondas de los usuarios */
+/* Fotos de los créditos */
 .profile-thumb {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid var(--toxic, #00ff66);
-  box-shadow: 0 0 6px rgba(0, 255, 102, 0.4);
+  width: 70px;
+  height: 80px;
+
+  /* No redonda */
+  border-radius: 4px;
+
+  /* Muestra la imagen completa */
+  object-fit: contain;
+  object-position: center;
+
+  display: block;
+  flex-shrink: 0;
+
+  border: 1px solid var(--toxic);
+  box-shadow: 0 0 10px var(--glow);
+
+  background: #111;
 }
 
 /* Botón estilo Instagram con borde verde */
