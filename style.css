@@ -522,3 +522,11 @@ html,body{
   .mode-select-panel .menu-buttons .btn{ font-size: 0.95rem; padding: 16px 40px; }
   .mode-select-back{ margin-top: 16px; }
 }
+
+.mp-name-row{ display:flex; flex-direction:column; gap:8px; margin: 20px 0 26px; text-align:left; }
+.mp-name-label{ font-size:0.7rem; letter-spacing:2px; color: var(--steel-light); text-transform:uppercase; }
+.mp-name-input{
+  background:#0e130d; border:1px solid var(--steel); color: var(--bone);
+  font-family: var(--font-body); font-size:1rem; padding:12px 14px; letter-spacing:0.5px;
+}
+.mp-name-input:focus{ outline:none; border-color: var(--toxic-dim); }

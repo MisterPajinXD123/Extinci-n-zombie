@@ -212,8 +212,9 @@ function mpGenerateCode() {
   return code;
 }
 
-function mpPromptName() {
-  const name = (prompt('Tu nombre de jugador (se ve en la sala):', '') || 'Jugador').trim();
+function mpGetName() {
+  const input = document.getElementById('mp-name-input');
+  const name = (input ? input.value : '').trim();
   return (name || 'Jugador').slice(0, 14);
 }
 
@@ -245,7 +246,7 @@ function mpCreateRoom() {
   mpResetState();
   MP.isHost = true;
   MP.code = mpGenerateCode();
-  MP.myName = mpPromptName();
+  MP.myName = mpGetName();
   MP.players = [{ id: 'host', name: MP.myName, isHost: true }];
   showScreen('screen-mp-lobby');
   document.getElementById('mp-status').textContent = 'Creando sala...';
@@ -275,7 +276,7 @@ function mpCreateRoom() {
 function mpJoinRoom(code) {
   mpResetState();
   MP.isHost = false;
-  MP.myName = mpPromptName();
+  MP.myName = mpGetName();
   showScreen('screen-mp-lobby');
   document.getElementById('mp-status').textContent = 'Conectando a la sala...';
   MP.peer = new Peer();
@@ -341,8 +342,12 @@ function handleAction(action) {
     case 'goto-credits': showScreen('screen-credits'); break;
     case 'goto-mode-select': showScreen('screen-mode-select'); break;
     case 'goto-mp-join': document.getElementById('mp-join-error').textContent = ''; showScreen('screen-mp-join'); break;
-    case 'mp-create': mpCreateRoom(); break;
+    case 'mp-create':
+      if (!document.getElementById('mp-name-input').value.trim()) { document.getElementById('mp-join-error').textContent = 'Escribí tu nombre antes de crear la sala.'; break; }
+      mpCreateRoom();
+      break;
     case 'mp-join': {
+      if (!document.getElementById('mp-name-input').value.trim()) { document.getElementById('mp-join-error').textContent = 'Escribí tu nombre antes de unirte.'; break; }
       const code = document.getElementById('mp-code-input').value.trim();
       if (!code) { document.getElementById('mp-join-error').textContent = 'Ingresá un código de sala.'; break; }
       mpJoinRoom(code);
