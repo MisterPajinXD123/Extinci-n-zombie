@@ -1988,6 +1988,7 @@ function runBossCutscene(level) {
 function advanceStage() {
   cancelAnimationFrame(GAME.rafId);
   stopBossMusic();
+  if (mpIsActive()) MP.readyChoices = {}; // que no queden "listos" de la fase anterior
   const isLast = GAME.stageIndex >= STAGES.length - 1;
   if (isLast) { return; } // el final se gestiona vía la poción
   GAME.stageIndex++;
