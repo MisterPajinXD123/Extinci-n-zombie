@@ -205,7 +205,10 @@ const MP = {
   players: [],     // [{ id, name, isHost }]
   myName: '',
   readyChoices: {}, // (host) { playerId: { character, vehicle, color, weapons } }
+  takenColors: {},  // { playerId: color } — quién eligió qué color de montura
 };
+
+function mpMyId() { return MP.isHost ? 'host' : (MP.peer ? MP.peer.id : null); }
 
 function mpIsActive() { return !!MP.peer; }
 
@@ -272,6 +275,9 @@ function mpCreateRoom() {
         mpBroadcastWaitingStatus();
         mpCheckAllReady();
       }
+      if (data.type === 'color-pick') {
+        mpClaimColor(conn.peer, data.color);
+      }
     });
     conn.on('close', () => {
       MP.players = MP.players.filter(p => p.id !== conn.peer);
@@ -296,8 +302,9 @@ function mpJoinRoom(code) {
     conn.on('data', data => {
       if (data.type === 'players') { MP.code = code.toUpperCase(); MP.players = data.players; mpUpdateLobbyUI(); }
       if (data.type === 'full') { mpShowJoinError('Esa sala ya tiene 5 jugadores.'); mpLeaveRoom(); }
-      if (data.type === 'begin-selection') { buildCharacterGrid(); showScreen('screen-character'); }
+      if (data.type === 'begin-selection') { MP.takenColors = {}; buildCharacterGrid(); showScreen('screen-character'); }
       if (data.type === 'waiting-status') { mpUpdateWaitingUI(data.readyIds); }
+      if (data.type === 'colors-taken') { MP.takenColors = data.taken; mpApplyTakenColorsToUI(); }
       if (data.type === 'begin-stage') { mpStartStageForAll(); }
     });
     conn.on('error', () => { mpShowJoinError('No se pudo conectar. Revisá el código.'); mpLeaveRoom(); });
@@ -325,10 +332,42 @@ function mpLeaveRoom() {
   showScreen('screen-menu');
 }
 
+/* --- Colores de montura: el host arbitra quién eligió cada color --- */
+
+function mpClaimColor(playerId, color) {
+  // Si alguien más ya lo tiene, no se reasigna (evita pisadas por carrera).
+  const alreadyTakenByOther = Object.entries(MP.takenColors).some(([id, c]) => id !== playerId && c === color);
+  if (alreadyTakenByOther) { mpBroadcastTakenColors(); return; }
+  MP.takenColors[playerId] = color;
+  mpBroadcastTakenColors();
+}
+
+function mpBroadcastTakenColors() {
+  MP.conns.forEach(c => { try { c.send({ type: 'colors-taken', taken: MP.takenColors }); } catch (e) { /* noop */ } });
+  mpApplyTakenColorsToUI();
+}
+
+function mpApplyTakenColorsToUI() {
+  const row = document.getElementById('color-swatch-row');
+  if (!row) return;
+  const myId = mpMyId();
+  const myColor = MP.takenColors[myId] || null;
+  GAME.selection.vehicleColor = myColor;
+  row.querySelectorAll('.color-swatch').forEach(sw => {
+    const color = sw.dataset.color;
+    const ownerId = Object.keys(MP.takenColors).find(id => MP.takenColors[id] === color);
+    sw.classList.toggle('selected', ownerId === myId);
+    sw.classList.toggle('taken', !!ownerId && ownerId !== myId);
+  });
+  const btn = document.getElementById('btn-vehicle-next');
+  if (btn) btn.disabled = !GAME.selection.vehicle || !myColor;
+}
+
 /* --- Selección sincronizada: todos eligen y arrancan la fase 1 juntos --- */
 
 function mpBeginSelectionForAll() {
   MP.readyChoices = {};
+  MP.takenColors = {};
   MP.conns.forEach(c => { try { c.send({ type: 'begin-selection' }); } catch (e) { /* noop */ } });
   if (!GAME.phaseSkip) { GAME.stageIndex = 0; GAME.run = { rescued: 0, kills: 0, totalKills: 0 }; }
   buildCharacterGrid();
@@ -551,7 +590,7 @@ function buildVehicleGrid(stage) {
   const grid = document.getElementById('vehicle-grid');
   grid.innerHTML = '';
   document.getElementById('btn-vehicle-next').disabled = true;
-  GAME.selection.vehicleColor = null;
+  GAME.selection.vehicleColor = mpIsActive() ? (MP.takenColors[mpMyId()] || null) : null;
   const colorPicker = document.getElementById('vehicle-color-picker');
   const checkNextEnabled = () => {
     const ok = !!GAME.selection.vehicle && (!mpIsActive() || !!GAME.selection.vehicleColor);
@@ -564,15 +603,16 @@ function buildVehicleGrid(stage) {
     MP_COLORS.forEach(color => {
       const sw = document.createElement('div');
       sw.className = 'color-swatch';
+      sw.dataset.color = color;
       sw.style.background = color;
       sw.addEventListener('click', () => {
-        row.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
-        sw.classList.add('selected');
-        GAME.selection.vehicleColor = color;
-        checkNextEnabled();
+        if (sw.classList.contains('taken')) return; // ya lo eligió otro jugador
+        const myId = mpMyId();
+        if (MP.isHost) { mpClaimColor(myId, color); } else { MP.hostConn.send({ type: 'color-pick', color }); }
       });
       row.appendChild(sw);
     });
+    mpApplyTakenColorsToUI();
   } else {
     colorPicker.style.display = 'none';
   }
@@ -741,10 +781,19 @@ function drawRiderZombie(ctx, x, y, angle) {
   drawZombie(ctx, x, y - 8, angle, 'rider', 0);
 }
 
-function drawVehicle(ctx, x, y, angle, v, scale) {
+function drawVehicle(ctx, x, y, angle, v, scale, mpColor) {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(scale, scale);
+  if (mpColor) {
+    // Anillo de color para diferenciar de quién es cada montura en multijugador.
+    ctx.strokeStyle = mpColor;
+    ctx.lineWidth = 4;
+    ctx.shadowColor = mpColor;
+    ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(0, 0, 40, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
   ctx.rotate(angle);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath(); ctx.ellipse(0, 16, 26, 8, 0, 0, Math.PI * 2); ctx.fill();
@@ -936,6 +985,7 @@ function startStageGameplay() {
   const vehicle = stage.onFoot ? null : {
     def: GAME.selection.vehicle, hp: GAME.selection.vehicle.hp, maxHp: GAME.selection.vehicle.hp,
     x: player.x, y: player.y, angle: 0, r: 30,
+    mpColor: mpIsActive() ? GAME.selection.vehicleColor : null,
   };
 
   const weaponStates = GAME.selection.weapons.length
@@ -2017,7 +2067,7 @@ function render() {
     ctx.globalAlpha = 1;
   });
 
-  if (level.vehicle) drawVehicle(ctx, level.vehicle.x, level.vehicle.y, level.vehicle.angle, level.vehicle.def, 1);
+  if (level.vehicle) drawVehicle(ctx, level.vehicle.x, level.vehicle.y, level.vehicle.angle, level.vehicle.def, 1, level.vehicle.mpColor);
   else drawHuman(ctx, level.player.x, level.player.y, level.player.angle, GAME.selection.character.color, GAME.selection.character.accent, 1);
 
   if (level.companion) drawCompanion(ctx, level.companion.x, level.companion.y, level.companion.def, 1.4);
