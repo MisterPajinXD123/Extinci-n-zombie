@@ -638,6 +638,7 @@ function buildVehicleGrid(stage) {
   document.getElementById('vehicle-sub').textContent = `Etapa ${stage.id} — ${stage.name}`;
   const grid = document.getElementById('vehicle-grid');
   grid.innerHTML = '';
+  GAME.selection.vehicle = null;
   document.getElementById('btn-vehicle-next').disabled = true;
   GAME.selection.vehicleColor = mpIsActive() ? (MP.takenColors[mpMyId()] || null) : null;
   const colorPicker = document.getElementById('vehicle-color-picker');
@@ -689,6 +690,7 @@ function buildCompanionGrid() {
   document.getElementById('vehicle-sub').textContent = 'Etapa 5 — Batalla final';
   const grid = document.getElementById('vehicle-grid');
   grid.innerHTML = '';
+  GAME.selection.companion = null;
   document.getElementById('btn-vehicle-next').disabled = true;
   COMPANIONS.forEach(c0 => {
     const card = document.createElement('div');
@@ -1989,6 +1991,7 @@ function advanceStage() {
   cancelAnimationFrame(GAME.rafId);
   stopBossMusic();
   if (mpIsActive()) MP.readyChoices = {}; // que no queden "listos" de la fase anterior
+  GAME.selection.vehicle = null; // que nadie arranque la fase nueva con la montura vieja
   const isLast = GAME.stageIndex >= STAGES.length - 1;
   if (isLast) { return; } // el final se gestiona vía la poción
   GAME.stageIndex++;
