@@ -505,3 +505,20 @@ html,body{
 .mp-player-list{ display:flex; flex-direction:column; gap:8px; margin:20px 0; text-align:left; max-height:220px; overflow-y:auto; }
 .mp-player-row{ background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px 14px; font-size:0.85rem; letter-spacing:1px; display:flex; justify-content:space-between; }
 .mp-player-row.is-host{ border-color: var(--toxic-dim); color: var(--toxic); }
+
+/* ---------- Pantalla "¿Cómo quieres jugar?" (más grande, y separando VOLVER) ---------- */
+.mode-select-panel{
+  width: min(1100px, 92vw);
+  min-height: min(70vh, 640px);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+}
+.mode-select-panel .panel-title{ font-size: 2.6rem; margin-bottom: 40px; }
+.mode-select-panel .menu-buttons .btn{ font-size: 1.15rem; padding: 22px 70px; }
+.mode-select-back{ margin-top: 56px; }
+
+@media (max-width: 700px){
+  .mode-select-panel{ width: 94vw; min-height: 60vh; }
+  .mode-select-panel .panel-title{ font-size: 1.7rem; }
+  .mode-select-panel .menu-buttons .btn{ font-size: 0.95rem; padding: 16px 40px; }
+  .mode-select-back{ margin-top: 40px; }
+}
