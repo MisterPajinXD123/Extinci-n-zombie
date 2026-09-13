@@ -206,6 +206,7 @@ const MP = {
   myName: '',
   readyChoices: {}, // (host) { playerId: { character, vehicle, color, weapons } }
   takenColors: {},  // { playerId: color } — quién eligió qué color de montura
+  stageDone: {},    // (host) { playerId: true } — quién ya llegó a su zona segura
 };
 
 function mpMyId() { return MP.isHost ? 'host' : (MP.peer ? MP.peer.id : null); }
@@ -278,6 +279,9 @@ function mpCreateRoom() {
       if (data.type === 'color-pick') {
         mpClaimColor(conn.peer, data.color);
       }
+      if (data.type === 'stage-done') {
+        mpHostReceiveStageDone(conn.peer);
+      }
     });
     conn.on('close', () => {
       MP.players = MP.players.filter(p => p.id !== conn.peer);
@@ -306,6 +310,8 @@ function mpJoinRoom(code) {
       if (data.type === 'waiting-status') { mpUpdateWaitingUI(data.readyIds); }
       if (data.type === 'colors-taken') { MP.takenColors = data.taken; mpApplyTakenColorsToUI(); }
       if (data.type === 'begin-stage') { mpStartStageForAll(); }
+      if (data.type === 'stage-progress') { mpUpdateStageWaitUI(data.doneIds); }
+      if (data.type === 'advance-stage') { advanceStage(); }
     });
     conn.on('error', () => { mpShowJoinError('No se pudo conectar. Revisá el código.'); mpLeaveRoom(); });
   });
@@ -368,6 +374,7 @@ function mpApplyTakenColorsToUI() {
 function mpBeginSelectionForAll() {
   MP.readyChoices = {};
   MP.takenColors = {};
+  MP.stageDone = {};
   MP.conns.forEach(c => { try { c.send({ type: 'begin-selection' }); } catch (e) { /* noop */ } });
   if (!GAME.phaseSkip) { GAME.stageIndex = 0; GAME.run = { rescued: 0, kills: 0, totalKills: 0 }; }
   buildCharacterGrid();
@@ -428,6 +435,46 @@ function mpStartStageForAll() {
     if (continueBtn) continueBtn.style.visibility = '';
     if (GAME.screen === targetScreen) startStageGameplay();
   }, 1800);
+}
+
+/* --- Avance de fase sincronizado: nadie pasa hasta que todos llegaron a su zona segura --- */
+
+function mpMarkStageDone() {
+  cancelAnimationFrame(GAME.rafId);
+  stopBossMusic();
+  showScreen('screen-mp-stage-wait');
+  if (MP.isHost) {
+    mpHostReceiveStageDone('host');
+  } else {
+    MP.hostConn.send({ type: 'stage-done' });
+    mpUpdateStageWaitUI([]);
+  }
+}
+
+function mpHostReceiveStageDone(playerId) {
+  MP.stageDone[playerId] = true;
+  const doneIds = Object.keys(MP.stageDone);
+  MP.conns.forEach(c => { try { c.send({ type: 'stage-progress', doneIds }); } catch (e) { /* noop */ } });
+  mpUpdateStageWaitUI(doneIds);
+  if (doneIds.length === MP.players.length) {
+    MP.stageDone = {};
+    MP.conns.forEach(c => { try { c.send({ type: 'advance-stage' }); } catch (e) { /* noop */ } });
+    advanceStage();
+  }
+}
+
+function mpUpdateStageWaitUI(doneIds) {
+  const list = document.getElementById('mp-stage-wait-list');
+  if (!list) return;
+  list.innerHTML = '';
+  MP.players.forEach(p => {
+    const id = p.isHost ? 'host' : p.id;
+    const isDone = doneIds.includes(id);
+    const row = document.createElement('div');
+    row.className = 'mp-player-row' + (isDone ? ' is-host' : '');
+    row.textContent = p.name + (p.isHost ? ' — Admin' : '') + (isDone ? ' ✔ en zona segura' : ' — jugando...');
+    list.appendChild(row);
+  });
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1917,7 +1964,10 @@ function checkStageCompletion(level) {
   }
   if (stage.objectiveType === 'boss') done = level.boss && level.boss.coreDefeated;
 
-  if (done) { level.subPhase = 'complete'; advanceStage(); }
+  if (done) {
+    level.subPhase = 'complete';
+    if (mpIsActive()) mpMarkStageDone(); else advanceStage();
+  }
 }
 
 function runBossCutscene(level) {
