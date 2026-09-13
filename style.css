@@ -390,3 +390,72 @@ html,body{
     padding: 16px 44px;
   }
 }
+
+/* Estilos del menú de Créditos */
+.credits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 30px;
+  width: 100%;
+}
+
+.credits-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 12px;
+}
+
+.credits-role {
+  color: #888;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.credits-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  font-family: 'Chakra Petch', sans-serif;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+/* Fotos redondas de los usuarios */
+.profile-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--toxic, #00ff66);
+  box-shadow: 0 0 6px rgba(0, 255, 102, 0.4);
+}
+
+/* Botón estilo Instagram con borde verde */
+.credits-ig-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid #45c926;
+  color: #45c926;
+  text-decoration: none;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 14px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.credits-ig-btn:hover {
+  background-color: rgba(69, 201, 38, 0.15);
+  box-shadow: 0 0 8px rgba(69, 201, 38, 0.4);
+}
+
+.credits-ig-btn .arrow {
+  font-size: 12px;
+}
