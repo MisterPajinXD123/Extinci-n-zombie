@@ -294,6 +294,25 @@ function mpCreateRoom() {
           if (z) { z.hp -= data.dmg; z.hit = 0.12; }
         }
       }
+      if (data.type === 'ehit') {
+        const level = GAME.level;
+        if (level) {
+          if (data.kind === 'boss' && level.boss && !level.boss.invulnerable) { level.boss.hp -= data.dmg; level.boss.hit = 0.12; }
+          if (data.kind === 'heli' && level.heli && !(level.heli.isBoss && level.heli.shielded)) {
+            const tough = level.heli.isBoss && level.heli.hp <= level.heli.maxHp * 0.5;
+            level.heli.hp -= tough ? data.dmg / 3 : data.dmg;
+            level.heli.hit = 0.12;
+          }
+          if (data.kind === 'minirobot' && level.miniRobots) {
+            const m = level.miniRobots.find(mm => mm.id === data.id);
+            if (m) { m.hp -= data.dmg; m.hit = 0.12; }
+          }
+          if (data.kind === 'miniplane' && level.miniPlanes) {
+            const m = level.miniPlanes.find(mm => mm.id === data.id);
+            if (m) { m.hp -= data.dmg; m.hit = 0.12; }
+          }
+        }
+      }
     });
     conn.on('close', () => {
       MP.players = MP.players.filter(p => p.id !== conn.peer);
@@ -332,6 +351,16 @@ function mpJoinRoom(code) {
           level.zombies = data.list;
           GAME.run.kills = data.kills; GAME.run.totalKills = data.totalKills;
           level.killsThisStage = data.killsThisStage;
+        }
+      }
+      if (data.type === 'enemies') {
+        const level = GAME.level;
+        if (level) {
+          level.heli = data.heli;
+          level.miniPlanes = data.miniPlanes;
+          level.boss = data.boss;
+          level.miniRobots = data.miniRobots;
+          level.airBossDone = data.airBossDone;
         }
       }
       if (data.type === 'damage') {
@@ -532,6 +561,15 @@ function mpBroadcastMyState(level, dt) {
       kills: GAME.run.kills, totalKills: GAME.run.totalKills, killsThisStage: level.killsThisStage,
     };
     MP.conns.forEach(c => { try { c.send(zPayload); } catch (e) { /* noop */ } });
+    const ePayload = {
+      type: 'enemies',
+      heli: level.heli ? { x: level.heli.x, y: level.heli.y, hp: level.heli.hp, maxHp: level.heli.maxHp, isBoss: level.heli.isBoss, active: level.heli.active, shielded: level.heli.shielded, hit: level.heli.hit } : null,
+      miniPlanes: level.miniPlanes ? level.miniPlanes.map(m => ({ id: m.id, x: m.x, y: m.y, angle: m.angle, hp: m.hp, maxHp: m.maxHp, hit: m.hit, alive: true })) : null,
+      boss: level.boss ? { x: level.boss.x, y: level.boss.y, angle: level.boss.angle, hp: level.boss.hp, maxHp: level.boss.maxHp, active: level.boss.active, defeated: level.boss.defeated, coreDefeated: level.boss.coreDefeated, invulnerable: level.boss.invulnerable, phase: level.boss.phase, hit: level.boss.hit } : null,
+      miniRobots: level.miniRobots ? level.miniRobots.map(m => ({ id: m.id, x: m.x, y: m.y, angle: m.angle, hp: m.hp, maxHp: m.maxHp, hit: m.hit })) : null,
+      airBossDone: level.airBossDone || false,
+    };
+    MP.conns.forEach(c => { try { c.send(ePayload); } catch (e) { /* noop */ } });
   } else if (MP.hostConn) {
     try { MP.hostConn.send(payload); } catch (e) { /* noop */ }
   }
@@ -1224,7 +1262,7 @@ function seedLevelEntities(level) {
     level.miniRobots = [0, 1, 2, 3, 4].map(i => {
       const orbitAngle = (i / 5) * Math.PI * 2;
       return {
-        x: level.boss.x + Math.cos(orbitAngle) * 100, y: level.boss.y + Math.sin(orbitAngle) * 100,
+        id: i, x: level.boss.x + Math.cos(orbitAngle) * 100, y: level.boss.y + Math.sin(orbitAngle) * 100,
         hp: 80, maxHp: 80, orbitAngle, orbitSpeed: rand(0.5, 0.9) * (Math.random() < 0.5 ? 1 : -1),
         orbitR: rand(85, 120), angle: 0, cd: rand(0, 1), hit: 0, alive: true,
       };
@@ -1472,10 +1510,12 @@ function update(dt) {
   if (!mpIsActive() || MP.isHost) updateZombies(level, dt);
   updateFollowers(level, dt);
   updatePickups(level);
-  if (stage.objectiveType === 'airBoss') updateHelis(level, dt);
-  if (level.miniPlanes) updateMiniPlanes(level, dt);
-  if (stage.objectiveType === 'boss') updateBoss(level, dt);
-  if (level.miniRobots) updateMiniRobots(level, dt);
+  if (!mpIsActive() || MP.isHost) {
+    if (stage.objectiveType === 'airBoss') updateHelis(level, dt);
+    if (level.miniPlanes) updateMiniPlanes(level, dt);
+    if (stage.objectiveType === 'boss') updateBoss(level, dt);
+    if (level.miniRobots) updateMiniRobots(level, dt);
+  }
   if (level.companion) updateCompanion(level, dt);
   if (level.allies) updateAllies(level, dt);
 
@@ -1601,42 +1641,59 @@ function updateBullets(level, dt) {
     if (level.boss && level.boss.active && !level.boss.defeated && !b.allyBullet) {
       if (dist(b.x, b.y, level.boss.x, level.boss.y) < 40) {
         b.life = 0; // el impacto se bloquea igual, para dar feedback visual
-        if (!level.boss.invulnerable) { level.boss.hp -= b.dmg; level.boss.hit = 0.12; }
+        if (!level.boss.invulnerable) {
+          if (iAmAuthoritative) { level.boss.hp -= b.dmg; level.boss.hit = 0.12; }
+          else if (MP.hostConn) { try { MP.hostConn.send({ type: 'ehit', kind: 'boss', dmg: b.dmg }); } catch (e) { /* noop */ } }
+        }
       }
     }
     if (level.miniRobots && !b.allyBullet) {
       level.miniRobots.forEach(m => {
         if (!m.alive) return;
-        if (dist(b.x, b.y, m.x, m.y) < 20) { m.hp -= b.dmg; m.hit = 0.12; b.life = 0; }
+        if (dist(b.x, b.y, m.x, m.y) < 20) {
+          m.hit = 0.12; b.life = 0;
+          if (iAmAuthoritative) { m.hp -= b.dmg; }
+          else if (MP.hostConn) { try { MP.hostConn.send({ type: 'ehit', kind: 'minirobot', id: m.id, dmg: b.dmg }); } catch (e) { /* noop */ } }
+        }
       });
     }
     if (level.heli && level.heli.active) {
       if (dist(b.x, b.y, level.heli.x, level.heli.y) < (level.heli.isBoss ? 54 : 24)) {
         b.life = 0;
         if (!(level.heli.isBoss && level.heli.shielded)) {
-          // A partir de la mitad de su vida, el jefe se vuelve el triple de
-          // resistente: recibe solo un tercio del daño de cada impacto.
-          const tough = level.heli.isBoss && level.heli.hp <= level.heli.maxHp * 0.5;
-          level.heli.hp -= tough ? b.dmg / 3 : b.dmg;
-          level.heli.hit = 0.12;
+          if (iAmAuthoritative) {
+            // A partir de la mitad de su vida, el jefe se vuelve el triple de
+            // resistente: recibe solo un tercio del daño de cada impacto.
+            const tough = level.heli.isBoss && level.heli.hp <= level.heli.maxHp * 0.5;
+            level.heli.hp -= tough ? b.dmg / 3 : b.dmg;
+            level.heli.hit = 0.12;
+          } else if (MP.hostConn) { try { MP.hostConn.send({ type: 'ehit', kind: 'heli', dmg: b.dmg }); } catch (e) { /* noop */ } }
         }
       }
     }
     if (level.miniPlanes && !b.allyBullet) {
       level.miniPlanes.forEach(m => {
         if (!m.alive) return;
-        if (dist(b.x, b.y, m.x, m.y) < 18) { m.hp -= b.dmg; m.hit = 0.12; b.life = 0; }
+        if (dist(b.x, b.y, m.x, m.y) < 18) {
+          m.hit = 0.12; b.life = 0;
+          if (iAmAuthoritative) { m.hp -= b.dmg; }
+          else if (MP.hostConn) { try { MP.hostConn.send({ type: 'ehit', kind: 'miniplane', id: m.id, dmg: b.dmg }); } catch (e) { /* noop */ } }
+        }
       });
     }
   });
   level.bullets = level.bullets.filter(b => b.life > 0);
 
-  // colisión balas enemigas -> jugador/vehículo
+  // colisión balas enemigas -> jugador/vehículo (propio o de otro jugador conectado)
   level.enemyBullets.forEach(b => {
-    const target = level.vehicle || level.player;
-    if (dist(b.x, b.y, target.x, target.y) < (level.vehicle ? level.vehicle.r : 16)) {
-      damagePlayerOrVehicle(level, b.dmg);
-      b.life = 0;
+    const targets = mpGetAllTargets(level);
+    for (const t of targets) {
+      const r = t.isSelf ? (level.vehicle ? level.vehicle.r : 16) : 20;
+      if (dist(b.x, b.y, t.x, t.y) < r) {
+        mpDamageTarget(level, t, b.dmg);
+        b.life = 0;
+        break;
+      }
     }
   });
   level.enemyBullets = level.enemyBullets.filter(b => b.life > 0);
@@ -1783,7 +1840,7 @@ function updateHelis(level, dt) {
       level.miniPlanes = Array.from({ length: 10 }, (_, i) => {
         const orbitAngle = (i / 10) * Math.PI * 2;
         return {
-          x: level.heli.x + Math.cos(orbitAngle) * 130, y: level.heli.y + Math.sin(orbitAngle) * 130,
+          id: i, x: level.heli.x + Math.cos(orbitAngle) * 130, y: level.heli.y + Math.sin(orbitAngle) * 130,
           hp: 35, maxHp: 35, orbitAngle, orbitSpeed: rand(0.6, 1.0) * (Math.random() < 0.5 ? 1 : -1),
           orbitR: rand(110, 165), angle: 0, cd: rand(0, 1.2), hit: 0, alive: true,
         };
@@ -1801,7 +1858,7 @@ function updateHelis(level, dt) {
       h.vx = rand(-range, range); h.vy = rand(-range, range);
     }
     h.cd -= dt;
-    const target = level.vehicle || level.player;
+    const target = mpNearestTarget(h, mpGetAllTargets(level));
     const range = h.isBoss ? 520 : 420;
     const inRange = dist(h.x, h.y, target.x, target.y) < range;
 
@@ -1869,7 +1926,7 @@ function updateMiniPlanes(level, dt) {
   if (!level.miniPlanes || !level.miniPlanes.length) return;
   const h = level.heli;
   if (!h || !h.isBoss || h.hp <= 0) { level.miniPlanes = []; return; }
-  const target = level.vehicle || level.player;
+  const target = mpNearestTarget(h, mpGetAllTargets(level));
   level.miniPlanes.forEach(m => {
     if (!m.alive) return;
     m.hit = Math.max(0, m.hit - dt);
@@ -1898,8 +1955,9 @@ function updateMiniPlanes(level, dt) {
 /* --------- Jefe final (etapa 5) --------- */
 function updateBoss(level, dt) {
   const b = level.boss; if (!b || b.defeated) return;
-  const p = level.player;
-  if (!b.active && dist(p.x, p.y, b.x, b.y) < 480) { b.active = true; }
+  const targets = mpGetAllTargets(level);
+  const nearest = mpNearestTarget(b, targets);
+  if (!b.active && dist(nearest.x, nearest.y, b.x, b.y) < 480) { b.active = true; }
   document.getElementById('hud-boss').classList.toggle('show', b.active);
   if (!b.active) return;
   b.hit = Math.max(0, (b.hit || 0) - dt);
@@ -1931,9 +1989,9 @@ function updateBoss(level, dt) {
     b.y = clamp(b.y + b.dashVY * dt, 150, WORLD.h - 150);
   } else {
     b.x += Math.sin(b.moveT * 0.6) * 30 * dt;
-    b.y = clamp(b.y + 20 * dt * (dist(p.x, p.y, b.x, b.y) > 260 ? 1 : -1), 150, WORLD.h - 150);
+    b.y = clamp(b.y + 20 * dt * (dist(nearest.x, nearest.y, b.x, b.y) > 260 ? 1 : -1), 150, WORLD.h - 150);
   }
-  b.angle = angleTo(b.x, b.y, p.x, p.y);
+  b.angle = angleTo(b.x, b.y, nearest.x, nearest.y);
   b.cd -= dt;
 
   if (b.phase <= 1) {
@@ -1987,7 +2045,7 @@ function updateBoss(level, dt) {
 function updateMiniRobots(level, dt) {
   if (!level.miniRobots || !level.miniRobots.length) return;
   const b = level.boss; if (!b) return;
-  const p = level.player;
+  const targets = mpGetAllTargets(level);
   level.miniRobots.forEach(m => {
     if (!m.alive) return;
     m.hit = Math.max(0, m.hit - dt);
@@ -1996,9 +2054,10 @@ function updateMiniRobots(level, dt) {
     m.orbitAngle += m.orbitSpeed * dt;
     m.x = lerp(m.x, b.x + Math.cos(m.orbitAngle) * m.orbitR, 0.15);
     m.y = lerp(m.y, b.y + Math.sin(m.orbitAngle) * m.orbitR, 0.15);
-    m.angle = angleTo(m.x, m.y, p.x, p.y);
+    const target = mpNearestTarget(m, targets);
+    m.angle = angleTo(m.x, m.y, target.x, target.y);
     m.cd -= dt;
-    const d = dist(m.x, m.y, p.x, p.y);
+    const d = dist(m.x, m.y, target.x, target.y);
     if (d < 380 && m.cd <= 0) {
       m.cd = rand(1.3, 1.9);
       level.enemyBullets.push({ x: m.x, y: m.y, vx: Math.cos(m.angle) * 210, vy: Math.sin(m.angle) * 210, dmg: 6, life: 2.4 });
