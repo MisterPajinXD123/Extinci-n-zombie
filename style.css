@@ -537,12 +537,7 @@ html,body{
   color:#fff; font-size:1.1rem; font-weight:bold; text-shadow:0 0 3px #000, 0 0 3px #000;
 }
 
-/* Mover botón de Instagram únicamente en la fila de Música (EMO) */
-#screen-credits .credits-row:nth-child(2) {
-  grid-template-columns: 110px auto auto;
-}
-
+/* Botón de Instagram pegado al nombre únicamente en la fila de Música (EMO) */
 #screen-credits .credits-row:nth-child(2) .credits-ig-btn {
-  justify-self: start;
-  margin-left: 10px;
+  margin-left: 6px;
 }
