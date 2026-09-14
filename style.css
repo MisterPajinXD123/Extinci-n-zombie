@@ -418,7 +418,7 @@ html,body{
 
 .credits-row {
   display: grid;
-  grid-template-columns: 90px 1fr auto;
+  grid-template-columns: 90px auto auto;
   align-items: center;
   column-gap: 20px;
 
