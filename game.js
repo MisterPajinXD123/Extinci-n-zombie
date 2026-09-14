@@ -1171,7 +1171,10 @@ function startStageGameplay() {
   function loop(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    if (!GAME.paused) { update(dt); render(); }
+    // En multijugador, pausar es solo para vos (ver el menú): el mundo
+    // compartido sigue corriendo y te pueden seguir atacando. En solitario,
+    // pausar sí detiene todo como siempre.
+    if (!GAME.paused || mpIsActive()) { update(dt); render(); }
     GAME.rafId = requestAnimationFrame(loop);
   }
   GAME.rafId = requestAnimationFrame(loop);
@@ -1455,9 +1458,16 @@ function update(dt) {
   level.shakeT = Math.max(0, level.shakeT - dt);
   if (level.vehicle) level.player.speed = level.vehicle.def.speed;
 
-  updatePlayerMovement(level, dt);
-  updateVehicle(level, dt);
-  updateWeapons(level, dt);
+  // En multijugador, si estás en el menú de pausa no podés moverte ni
+  // disparar, pero el mundo compartido sigue corriendo igual (te pueden
+  // seguir atacando). En solitario esto ni se evalúa: el loop entero se
+  // frena directamente al pausar.
+  const iAmBlocked = GAME.paused && mpIsActive();
+  if (!iAmBlocked) {
+    updatePlayerMovement(level, dt);
+    updateVehicle(level, dt);
+    updateWeapons(level, dt);
+  } else if (level.player.invuln > 0) { level.player.invuln -= dt; }
   updateBullets(level, dt);
   if (!mpIsActive() || MP.isHost) updateZombies(level, dt);
   updateFollowers(level, dt);
