@@ -418,10 +418,9 @@ html,body{
 
 .credits-row {
   display: grid;
-  grid-template-columns: 90px auto auto;
+  grid-template-columns: 140px auto auto;
   align-items: center;
-  column-gap: 20px;
-
+  column-gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 12px;
 }
