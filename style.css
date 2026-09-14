@@ -418,7 +418,7 @@ html,body{
 
 .credits-row {
   display: grid;
-  grid-template-columns: 140px auto auto;
+  grid-template-columns: 90px 1fr auto;
   align-items: center;
   column-gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -442,6 +442,13 @@ html,body{
   font-weight: 600;
   font-size: 18px;
   flex-wrap: nowrap;
+}
+
+.profile-thumb {
+  width: 70px;
+  height: 70px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .creador-name > span {
