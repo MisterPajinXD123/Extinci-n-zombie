@@ -207,6 +207,7 @@ const MP = {
   readyChoices: {}, // (host) { playerId: { character, vehicle, color, weapons } }
   takenColors: {},  // { playerId: color } — quién eligió qué color de montura
   stageDone: {},    // (host) { playerId: true } — quién ya llegó a su zona segura
+  remoteStates: {}, // { playerId: {x,y,angle,vehicleDef,vehicleColor,charColor,charAccent,name} }
 };
 
 function mpMyId() { return MP.isHost ? 'host' : (MP.peer ? MP.peer.id : null); }
@@ -282,10 +283,15 @@ function mpCreateRoom() {
       if (data.type === 'stage-done') {
         mpHostReceiveStageDone(conn.peer);
       }
+      if (data.type === 'pos') {
+        MP.remoteStates[data.id] = data;
+        MP.conns.forEach(c => { if (c !== conn) { try { c.send(data); } catch (e) { /* noop */ } } });
+      }
     });
     conn.on('close', () => {
       MP.players = MP.players.filter(p => p.id !== conn.peer);
       MP.conns = MP.conns.filter(c => c !== conn);
+      delete MP.remoteStates[conn.peer];
       mpBroadcastPlayerList();
     });
   });
@@ -312,6 +318,7 @@ function mpJoinRoom(code) {
       if (data.type === 'begin-stage') { mpStartStageForAll(); }
       if (data.type === 'stage-progress') { mpUpdateStageWaitUI(data.doneIds); }
       if (data.type === 'advance-stage') { advanceStage(); }
+      if (data.type === 'pos') { if (data.id !== mpMyId()) MP.remoteStates[data.id] = data; }
     });
     conn.on('error', () => { mpShowJoinError('No se pudo conectar. Revisá el código.'); mpLeaveRoom(); });
   });
@@ -375,6 +382,7 @@ function mpBeginSelectionForAll() {
   MP.readyChoices = {};
   MP.takenColors = {};
   MP.stageDone = {};
+  MP.remoteStates = {};
   MP.conns.forEach(c => { try { c.send({ type: 'begin-selection' }); } catch (e) { /* noop */ } });
   if (!GAME.phaseSkip) { GAME.stageIndex = 0; GAME.run = { rescued: 0, kills: 0, totalKills: 0 }; }
   buildCharacterGrid();
@@ -476,6 +484,47 @@ function mpUpdateStageWaitUI(doneIds) {
     row.className = 'mp-player-row' + (isDone ? ' is-host' : '');
     row.textContent = p.name + (p.isHost ? ' — Admin' : '') + (isDone ? ' ✔ en zona segura' : ' — jugando...');
     list.appendChild(row);
+  });
+}
+
+/* --- Mundo compartido: ver a los demás jugadores moverse en tiempo real --- */
+
+function mpBroadcastMyState(level, dt) {
+  MP._sendAcc = (MP._sendAcc || 0) + dt;
+  if (MP._sendAcc < 0.07) return; // ~14 veces por segundo, suficiente y liviano
+  MP._sendAcc = 0;
+  const payload = {
+    type: 'pos',
+    id: mpMyId(),
+    name: MP.myName,
+    x: level.vehicle ? level.vehicle.x : level.player.x,
+    y: level.vehicle ? level.vehicle.y : level.player.y,
+    angle: level.vehicle ? level.vehicle.angle : level.player.angle,
+    vehicleDef: level.vehicle ? level.vehicle.def : null,
+    vehicleColor: level.vehicle ? level.vehicle.mpColor : null,
+    charColor: GAME.selection.character ? GAME.selection.character.color : '#e9e6d6',
+    charAccent: GAME.selection.character ? GAME.selection.character.accent : '#5f8f2e',
+  };
+  if (MP.isHost) {
+    MP.conns.forEach(c => { try { c.send(payload); } catch (e) { /* noop */ } });
+  } else if (MP.hostConn) {
+    try { MP.hostConn.send(payload); } catch (e) { /* noop */ }
+  }
+}
+
+function mpDrawRemotePlayers(ctx) {
+  const myId = mpMyId();
+  Object.values(MP.remoteStates).forEach(s => {
+    if (s.id === myId) return;
+    if (s.vehicleDef) drawVehicle(ctx, s.x, s.y, s.angle, s.vehicleDef, 1, s.vehicleColor);
+    else drawHuman(ctx, s.x, s.y, s.angle, s.charColor, s.charAccent, 1);
+    ctx.save();
+    ctx.fillStyle = '#e9e6d6';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+    ctx.fillText(s.name || '', s.x, s.y - 46);
+    ctx.restore();
   });
 }
 
@@ -1398,6 +1447,7 @@ function update(dt) {
 
   checkStageCompletion(level);
   updateHUD(level);
+  if (mpIsActive()) mpBroadcastMyState(level, dt);
 }
 
 function moveVector() {
@@ -2125,6 +2175,8 @@ function render() {
 
   if (level.vehicle) drawVehicle(ctx, level.vehicle.x, level.vehicle.y, level.vehicle.angle, level.vehicle.def, 1, level.vehicle.mpColor);
   else drawHuman(ctx, level.player.x, level.player.y, level.player.angle, GAME.selection.character.color, GAME.selection.character.accent, 1);
+
+  if (mpIsActive()) mpDrawRemotePlayers(ctx);
 
   if (level.companion) drawCompanion(ctx, level.companion.x, level.companion.y, level.companion.def, 1.4);
   if (level.allies) level.allies.forEach(a => drawCompanion(ctx, a.x, a.y, { color: ALLY_COLOR }, 1.3));
