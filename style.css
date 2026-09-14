@@ -536,3 +536,9 @@ html,body{
   content:'✕'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   color:#fff; font-size:1.1rem; font-weight:bold; text-shadow:0 0 3px #000, 0 0 3px #000;
 }
+
+/* Mover botón de Instagram únicamente en la fila de Música (EMO) */
+#screen-credits .credits-row:nth-child(2) .credits-ig-btn {
+  justify-self: start;
+  margin-left: 10px;
+}
