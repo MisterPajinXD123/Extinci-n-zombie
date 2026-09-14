@@ -287,6 +287,13 @@ function mpCreateRoom() {
         MP.remoteStates[data.id] = data;
         MP.conns.forEach(c => { if (c !== conn) { try { c.send(data); } catch (e) { /* noop */ } } });
       }
+      if (data.type === 'zombie-hit') {
+        const level = GAME.level;
+        if (level) {
+          const z = level.zombies.find(zz => zz.id === data.zombieId);
+          if (z) { z.hp -= data.dmg; z.hit = 0.12; }
+        }
+      }
     });
     conn.on('close', () => {
       MP.players = MP.players.filter(p => p.id !== conn.peer);
@@ -319,6 +326,18 @@ function mpJoinRoom(code) {
       if (data.type === 'stage-progress') { mpUpdateStageWaitUI(data.doneIds); }
       if (data.type === 'advance-stage') { advanceStage(); }
       if (data.type === 'pos') { if (data.id !== mpMyId()) MP.remoteStates[data.id] = data; }
+      if (data.type === 'zombies') {
+        const level = GAME.level;
+        if (level) {
+          level.zombies = data.list;
+          GAME.run.kills = data.kills; GAME.run.totalKills = data.totalKills;
+          level.killsThisStage = data.killsThisStage;
+        }
+      }
+      if (data.type === 'damage') {
+        const level = GAME.level;
+        if (level) damagePlayerOrVehicle(level, data.dmg);
+      }
     });
     conn.on('error', () => { mpShowJoinError('No se pudo conectar. Revisá el código.'); mpLeaveRoom(); });
   });
@@ -507,6 +526,12 @@ function mpBroadcastMyState(level, dt) {
   };
   if (MP.isHost) {
     MP.conns.forEach(c => { try { c.send(payload); } catch (e) { /* noop */ } });
+    const zPayload = {
+      type: 'zombies',
+      list: level.zombies.map(z => ({ id: z.id, x: z.x, y: z.y, angle: z.angle, type: z.type, hp: z.hp, maxHp: z.maxHp, hit: z.hit })),
+      kills: GAME.run.kills, totalKills: GAME.run.totalKills, killsThisStage: level.killsThisStage,
+    };
+    MP.conns.forEach(c => { try { c.send(zPayload); } catch (e) { /* noop */ } });
   } else if (MP.hostConn) {
     try { MP.hostConn.send(payload); } catch (e) { /* noop */ }
   }
@@ -1217,7 +1242,9 @@ function spawnZombie(level) {
   else if (edge === 1) { x = rand(0, WORLD.w); y = WORLD.h; }
   else if (edge === 2) { x = 0; y = rand(0, WORLD.h); }
   else { x = WORLD.w; y = rand(0, WORLD.h); }
+  level.nextZombieId = (level.nextZombieId || 0) + 1;
   level.zombies.push({
+    id: level.nextZombieId,
     x, y, type, hp: type === 'rider' ? 60 : 42, maxHp: type === 'rider' ? 60 : 42,
     speed: type === 'rider' ? rand(110, 150) : rand(48, 82),
     angle: 0, cd: rand(0, 1), hit: 0, alive: true,
@@ -1432,7 +1459,7 @@ function update(dt) {
   updateVehicle(level, dt);
   updateWeapons(level, dt);
   updateBullets(level, dt);
-  updateZombies(level, dt);
+  if (!mpIsActive() || MP.isHost) updateZombies(level, dt);
   updateFollowers(level, dt);
   updatePickups(level);
   if (stage.objectiveType === 'airBoss') updateHelis(level, dt);
@@ -1551,10 +1578,15 @@ function updateBullets(level, dt) {
   level.enemyBullets = level.enemyBullets.filter(b => b.life > 0);
 
   // colisión balas jugador -> zombies
+  const iAmAuthoritative = !mpIsActive() || MP.isHost;
   level.bullets.forEach(b => {
     level.zombies.forEach(z => {
-      if (!z.alive) return;
-      if (dist(b.x, b.y, z.x, z.y) < 15) { z.hp -= b.dmg; z.hit = 0.12; b.life = 0; }
+      if (z.alive === false) return;
+      if (dist(b.x, b.y, z.x, z.y) < 15) {
+        z.hit = 0.12; b.life = 0;
+        if (iAmAuthoritative) { z.hp -= b.dmg; }
+        else if (MP.hostConn) { try { MP.hostConn.send({ type: 'zombie-hit', zombieId: z.id, dmg: b.dmg }); } catch (e) { /* noop */ } }
+      }
     });
     if (level.boss && level.boss.active && !level.boss.defeated && !b.allyBullet) {
       if (dist(b.x, b.y, level.boss.x, level.boss.y) < 40) {
@@ -1599,15 +1631,18 @@ function updateBullets(level, dt) {
   });
   level.enemyBullets = level.enemyBullets.filter(b => b.life > 0);
 
-  // zombies muertos
-  level.zombies.forEach(z => {
-    if (z.alive && z.hp <= 0) {
-      z.alive = false; level.killsThisStage++; GAME.run.kills++; GAME.run.totalKills++;
-      spawnDeathParticles(level, z.x, z.y);
-      setTimeout(() => { if (level === GAME.level && level.subPhase === 'play') spawnZombie(level); }, 2600);
-    }
-  });
-  level.zombies = level.zombies.filter(z => z.alive);
+  // zombies muertos (solo lo decide quien controla la simulación real:
+  // el Admin en multijugador, o el propio jugador en solitario)
+  if (iAmAuthoritative) {
+    level.zombies.forEach(z => {
+      if (z.alive && z.hp <= 0) {
+        z.alive = false; level.killsThisStage++; GAME.run.kills++; GAME.run.totalKills++;
+        spawnDeathParticles(level, z.x, z.y);
+        setTimeout(() => { if (level === GAME.level && level.subPhase === 'play') spawnZombie(level); }, 2600);
+      }
+    });
+    level.zombies = level.zombies.filter(z => z.alive);
+  }
 }
 
 function spawnDeathParticles(level, x, y) {
@@ -1643,23 +1678,58 @@ function onPlayerDown(level) {
 }
 
 function updateZombies(level, dt) {
-  const target = level.vehicle || level.player;
+  const targets = mpGetAllTargets(level);
   level.zombies.forEach(z => {
     z.hit = Math.max(0, z.hit - dt);
     z.cd -= dt;
+    const target = mpNearestTarget(z, targets);
     const d = dist(z.x, z.y, target.x, target.y);
     z.angle = angleTo(z.x, z.y, target.x, target.y);
     if (z.type === 'gunner' && d < 340 && d > 90) {
-      if (z.cd <= 0) { z.cd = 1.6; level.enemyBullets.push({ x: z.x, y: z.y, vx: Math.cos(z.angle) * 260, vy: Math.sin(z.angle) * 260, dmg: 8, life: 2 }); }
+      if (z.cd <= 0) {
+        z.cd = 1.6;
+        if (target.isSelf) {
+          level.enemyBullets.push({ x: z.x, y: z.y, vx: Math.cos(z.angle) * 260, vy: Math.sin(z.angle) * 260, dmg: 8, life: 2 });
+        } else {
+          mpDamageTarget(level, target, 8);
+        }
+      }
     } else if (d > 26) {
       z.x += Math.cos(z.angle) * z.speed * dt; z.y += Math.sin(z.angle) * z.speed * dt;
     } else if (z.cd <= 0) {
-      z.cd = 0.9; damagePlayerOrVehicle(level, z.type === 'rider' ? 14 : 9);
+      z.cd = 0.9;
+      mpDamageTarget(level, target, z.type === 'rider' ? 14 : 9);
     }
   });
 
   level.particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; });
   level.particles = level.particles.filter(p => p.life > 0);
+}
+
+// Todos los jugadores conectados son blancos válidos para los zombies, no
+// solo el jugador local (esto solo importa cuando el Admin corre la
+// simulación compartida; en solitario simplemente devuelve un único blanco).
+function mpGetAllTargets(level) {
+  const self = level.vehicle || level.player;
+  const list = [{ x: self.x, y: self.y, isSelf: true, conn: null }];
+  if (mpIsActive() && MP.isHost) {
+    MP.conns.forEach(c => {
+      const s = MP.remoteStates[c.peer];
+      if (s) list.push({ x: s.x, y: s.y, isSelf: false, conn: c });
+    });
+  }
+  return list;
+}
+
+function mpNearestTarget(z, targets) {
+  let best = targets[0], bestD = Infinity;
+  targets.forEach(t => { const d = dist(z.x, z.y, t.x, t.y); if (d < bestD) { bestD = d; best = t; } });
+  return best;
+}
+
+function mpDamageTarget(level, target, dmg) {
+  if (target.isSelf) { damagePlayerOrVehicle(level, dmg); return; }
+  if (target.conn) { try { target.conn.send({ type: 'damage', dmg }); } catch (e) { /* noop */ } }
 }
 
 function updateFollowers(level, dt) {
