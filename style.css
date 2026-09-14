@@ -553,3 +553,9 @@ html,body{
   content:'✕'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   color:#fff; font-size:1.1rem; font-weight:bold; text-shadow:0 0 3px #000, 0 0 3px #000;
 }
+
+/* SOLO MOVER EL INSTAGRAM DE MÚSICA */
+#screen-credits .credits-row:nth-child(2) {
+  grid-template-columns: 90px auto auto;
+  column-gap: 10px;
+}
