@@ -418,9 +418,9 @@ html,body{
 
 .credits-row {
   display: grid;
-  grid-template-columns: 90px 1fr auto;
+  grid-template-columns: 110px 1fr auto;
   align-items: center;
-  column-gap: 12px;
+  column-gap: 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 12px;
 }
@@ -444,39 +444,21 @@ html,body{
   flex-wrap: nowrap;
 }
 
-.profile-thumb {
-  width: 70px;
-  height: 70px;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.creador-name > span {
-  transform: translateX(0);
-}
-
 /* Fotos de los créditos */
 .profile-thumb {
   width: 70px;
   height: 80px;
-
-  /* No redonda */
   border-radius: 4px;
-
-  /* Muestra la imagen completa */
   object-fit: contain;
   object-position: center;
-
   display: block;
   flex-shrink: 0;
-
   border: 1px solid var(--toxic);
   box-shadow: 0 0 10px var(--glow);
-
   background: #111;
 }
 
-/* Botón estilo Instagram con borde verde */
+/* Botón estilo Instagram */
 .credits-ig-btn {
   display: inline-flex;
   align-items: center;
@@ -489,6 +471,7 @@ html,body{
   font-size: 14px;
   border-radius: 4px;
   transition: all 0.2s ease;
+  justify-self: end;
 }
 
 .credits-ig-btn:hover {
@@ -552,10 +535,4 @@ html,body{
 .color-swatch.taken::after{
   content:'✕'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   color:#fff; font-size:1.1rem; font-weight:bold; text-shadow:0 0 3px #000, 0 0 3px #000;
-}
-
-/* SOLO MOVER EL INSTAGRAM DE MÚSICA */
-#screen-credits .credits-row:nth-child(2) {
-  grid-template-columns: 90px auto auto;
-  column-gap: 10px;
 }
