@@ -539,5 +539,5 @@ html,body{
 
 /* Botón de Instagram pegado al nombre únicamente en la fila de Música (EMO) */
 #screen-credits .credits-row:nth-child(2) .credits-ig-btn {
-  margin-left: 6px;
+  margin-left: -6px;
 }
