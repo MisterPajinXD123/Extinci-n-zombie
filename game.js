@@ -364,8 +364,8 @@ function mpJoinRoom(code) {
         }
       }
       if (data.type === 'damage') {
-        const level = GAME.level;
-        if (level) damagePlayerOrVehicle(level, data.dmg);
+        if (data.targetId && data.targetId !== mpMyId()) { /* no era para mí, se ignora */ }
+        else { const level = GAME.level; if (level) damagePlayerOrVehicle(level, data.dmg); }
       }
     });
     conn.on('error', () => { mpShowJoinError('No se pudo conectar. Revisá el código.'); mpLeaveRoom(); });
@@ -1796,7 +1796,7 @@ function mpNearestTarget(z, targets) {
 
 function mpDamageTarget(level, target, dmg) {
   if (target.isSelf) { damagePlayerOrVehicle(level, dmg); return; }
-  if (target.conn) { try { target.conn.send({ type: 'damage', dmg }); } catch (e) { /* noop */ } }
+  if (target.conn) { try { target.conn.send({ type: 'damage', dmg, targetId: target.conn.peer }); } catch (e) { /* noop */ } }
 }
 
 function updateFollowers(level, dt) {
