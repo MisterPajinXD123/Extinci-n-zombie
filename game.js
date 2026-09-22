@@ -548,6 +548,7 @@ function mpBuildPosPayload(level) {
     x: level.vehicle ? level.vehicle.x : level.player.x,
     y: level.vehicle ? level.vehicle.y : level.player.y,
     angle: level.vehicle ? level.vehicle.angle : level.player.angle,
+    aimAngle: level.player.angle,
     vehicleDef: level.vehicle ? level.vehicle.def : null,
     vehicleColor: level.vehicle ? level.vehicle.mpColor : null,
     charColor: GAME.selection.character ? GAME.selection.character.color : '#e9e6d6',
@@ -600,7 +601,10 @@ function mpDrawRemotePlayers(ctx) {
     if (s.id === myId) return;
     ctx.save();
     if (s.dead) ctx.globalAlpha = 0.35; // cuerpo apagado para el jugador eliminado
-    if (s.vehicleDef) drawVehicle(ctx, s.x, s.y, s.angle, s.vehicleDef, 1, s.vehicleColor);
+    if (s.vehicleDef) {
+      const remoteRider = { color: s.charColor, accent: s.charAccent, aimAngle: s.aimAngle !== undefined ? s.aimAngle : s.angle };
+      drawVehicle(ctx, s.x, s.y, s.angle, s.vehicleDef, 1, s.vehicleColor, remoteRider);
+    }
     else drawHuman(ctx, s.x, s.y, s.angle, s.charColor, s.charAccent, 1);
     ctx.restore();
     ctx.save();
@@ -967,7 +971,29 @@ function drawRiderZombie(ctx, x, y, angle) {
   drawZombie(ctx, x, y - 8, angle, 'rider', 0);
 }
 
-function drawVehicle(ctx, x, y, angle, v, scale, mpColor) {
+// Dibuja al personaje (el que elegiste: hombre o mujer) montado/asomado en el
+// vehículo. Se llama ya posicionado y rotado en el punto donde debe ir sentado;
+// su propia rotación local ya viene alineada con la dirección de puntería.
+function drawRiderFigure(ctx, bodyColor, accent) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(0, 5, 7, 3, 0, 0, Math.PI * 2); ctx.fill();
+  // cuerpo/torso asomado
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath(); ctx.ellipse(0, 0, 7, 8, 0, 0, Math.PI * 2); ctx.fill();
+  // cabeza
+  ctx.fillStyle = '#e9c9a0';
+  ctx.beginPath(); ctx.arc(0, -10, 5, 0, Math.PI * 2); ctx.fill();
+  // detalle de acento (casco/pañuelo), distingue al personaje elegido
+  ctx.fillStyle = accent;
+  ctx.beginPath(); ctx.arc(0, -13, 2.4, 0, Math.PI * 2); ctx.fill();
+  // arma en la mano, apuntando hacia donde se dispara
+  ctx.strokeStyle = '#20241c'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(4, -1); ctx.lineTo(17, -1); ctx.stroke();
+  ctx.restore();
+}
+
+function drawVehicle(ctx, x, y, angle, v, scale, mpColor, rider) {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(scale, scale);
@@ -980,10 +1006,13 @@ function drawVehicle(ctx, x, y, angle, v, scale, mpColor) {
     ctx.beginPath(); ctx.arc(0, 0, 40, 0, Math.PI * 2); ctx.stroke();
     ctx.shadowBlur = 0;
   }
+  // El casco/cuerpo del vehículo rota según la dirección de movimiento (WASD).
+  ctx.save();
   ctx.rotate(angle);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath(); ctx.ellipse(0, 16, 26, 8, 0, 0, Math.PI * 2); ctx.fill();
   const [c1, c2] = v.pal;
+  let riderSpot = null; // posición local (dentro del casco) donde va sentado el personaje
   switch (v.kind) {
     case 'dino':
       ctx.fillStyle = c1;
@@ -995,14 +1024,20 @@ function drawVehicle(ctx, x, y, angle, v, scale, mpColor) {
       ctx.beginPath(); ctx.arc(28, -10, 1.6, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = c1; ctx.lineWidth = 5; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(-24, 4); ctx.lineTo(-24, 16); ctx.moveTo(-8, 6); ctx.lineTo(-8, 18); ctx.stroke();
+      riderSpot = { dx: -2, dy: -9 };
       break;
     case 'tank':
+      // Solo el casco y las orugas: la torreta (con el artillero) se dibuja
+      // aparte más abajo, con su propia rotación hacia la puntería.
       ctx.fillStyle = c2; ctx.fillRect(-26, -14, 52, 28);
       ctx.fillStyle = c1; ctx.fillRect(-22, -10, 44, 20);
-      ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#20241c'; ctx.fillRect(0, -3, 26, 6);
       ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
       for (let i = -20; i <= 20; i += 8) { ctx.beginPath(); ctx.arc(i, -16, 4, 0, Math.PI * 2); ctx.arc(i, 16, 4, 0, Math.PI * 2); ctx.stroke(); }
+      if (!rider) {
+        // Vista previa (menú de selección): sin jugador aún, torreta fija al frente.
+        ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#20241c'; ctx.fillRect(0, -3, 26, 6);
+      }
       break;
     case 'shoe':
       ctx.fillStyle = c1;
@@ -1011,12 +1046,14 @@ function drawVehicle(ctx, x, y, angle, v, scale, mpColor) {
       ctx.fillStyle = c2; ctx.fillRect(-24, 6, 48, 6);
       ctx.strokeStyle = c2; ctx.lineWidth = 4; ctx.lineCap = 'round';
       for (let i = -18; i <= 14; i += 12) { ctx.beginPath(); ctx.moveTo(i, 10); ctx.lineTo(i - 3, 20); ctx.stroke(); }
+      riderSpot = { dx: 0, dy: -15 };
       break;
     case 'ball':
       ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = c2; ctx.lineWidth = 2;
       for (let a = 0; a < 6; a++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 18, Math.sin(a) * 18); ctx.stroke(); }
       ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.stroke();
+      riderSpot = { dx: 0, dy: -17 };
       break;
     case 'case':
       ctx.fillStyle = c1; ctx.fillRect(-26, -12, 52, 24);
@@ -1024,12 +1061,14 @@ function drawVehicle(ctx, x, y, angle, v, scale, mpColor) {
       ctx.fillStyle = c2; ctx.fillRect(-4, -12, 8, 24);
       ctx.strokeStyle = '#e0b13f'; ctx.lineWidth = 4; ctx.lineCap = 'round';
       for (let i = -20; i <= 20; i += 10) { ctx.beginPath(); ctx.moveTo(i, 12); ctx.lineTo(i, 22); ctx.stroke(); }
+      riderSpot = { dx: 0, dy: -16 };
       break;
     case 'horse':
       ctx.fillStyle = c1; ctx.beginPath(); ctx.ellipse(0, 0, 22, 11, 0, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.ellipse(22, -6, 8, 7, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = c2; ctx.lineWidth = 5; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(-14, 8); ctx.lineTo(-14, 20); ctx.moveTo(10, 8); ctx.lineTo(10, 20); ctx.stroke();
+      riderSpot = { dx: -4, dy: -9 };
       break;
     case 'cat2':
       ctx.fillStyle = c1; ctx.beginPath(); ctx.ellipse(0, 2, 20, 12, 0, 0, Math.PI * 2); ctx.fill();
@@ -1037,9 +1076,35 @@ function drawVehicle(ctx, x, y, angle, v, scale, mpColor) {
       ctx.fillStyle = c2;
       ctx.beginPath(); ctx.moveTo(12, -14); ctx.lineTo(16, -22); ctx.lineTo(20, -14); ctx.fill();
       ctx.beginPath(); ctx.moveTo(-6, -18); ctx.lineTo(-2, -26); ctx.lineTo(2, -18); ctx.fill();
+      riderSpot = { dx: 3, dy: -4 };
       break;
   }
-  ctx.restore();
+  if (rider) {
+    if (v.kind === 'tank') {
+      // Torreta con cañón: rota de forma independiente al casco, siempre
+      // apuntando hacia donde apunta el mouse/joystick de puntería. Así, si
+      // quieres disparar a un costado, el cañón (la "cosa larga") se ve
+      // apuntando exactamente hacia ese lado, no hacia donde te mueves.
+      ctx.save();
+      ctx.rotate(rider.aimAngle - angle);
+      ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#20241c'; ctx.fillRect(0, -3, 27, 6);
+      // el artillero (tu personaje) asomado por la escotilla de la torreta
+      ctx.fillStyle = rider.color; ctx.beginPath(); ctx.arc(-3, 0, 4.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = rider.accent; ctx.beginPath(); ctx.arc(-3, -3, 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else if (riderSpot) {
+      ctx.save();
+      ctx.translate(riderSpot.dx, riderSpot.dy);
+      // El personaje mantiene su lugar sobre la montura, pero su cuerpo/arma
+      // se orienta hacia la puntería real (mouse), no hacia el movimiento.
+      ctx.rotate(rider.aimAngle - angle);
+      drawRiderFigure(ctx, rider.color, rider.accent);
+      ctx.restore();
+    }
+  }
+  ctx.restore(); // fin rotación del casco
+  ctx.restore(); // fin save exterior
 }
 
 function drawCompanion(ctx, x, y, comp, scale) {
@@ -1637,7 +1702,12 @@ function updateWeapons(level, dt) {
 
 function fireWeapon(level, w) {
   const p = level.player;
-  const muzzleX = p.x + Math.cos(p.angle) * 20, muzzleY = p.y + Math.sin(p.angle) * 20;
+  // En el tanque el cañón es más largo que el brazo de un personaje a pie,
+  // así que la bala nace más adelante, justo en la punta del cañón (que ya
+  // apunta hacia la puntería real, ver drawVehicle).
+  const isTankTurret = level.vehicle && level.vehicle.def && level.vehicle.def.kind === 'tank';
+  const muzzleDist = isTankTurret ? 30 : 20;
+  const muzzleX = p.x + Math.cos(p.angle) * muzzleDist, muzzleY = p.y + Math.sin(p.angle) * muzzleDist;
   const pellets = w.pellets || 1;
   for (let i = 0; i < pellets; i++) {
     const spread = (Math.random() - 0.5) * w.spread * 2;
@@ -2415,7 +2485,12 @@ function render() {
 
   ctx.save();
   if (level.dead) ctx.globalAlpha = 0.35; // cuerpo apagado: este jugador ya fue eliminado
-  if (level.vehicle) drawVehicle(ctx, level.vehicle.x, level.vehicle.y, level.vehicle.angle, level.vehicle.def, 1, level.vehicle.mpColor);
+  if (level.vehicle) {
+    const myRider = GAME.selection.character
+      ? { color: GAME.selection.character.color, accent: GAME.selection.character.accent, aimAngle: level.player.angle }
+      : null;
+    drawVehicle(ctx, level.vehicle.x, level.vehicle.y, level.vehicle.angle, level.vehicle.def, 1, level.vehicle.mpColor, myRider);
+  }
   else drawHuman(ctx, level.player.x, level.player.y, level.player.angle, GAME.selection.character.color, GAME.selection.character.accent, 1);
   ctx.restore();
   if (level.dead) {
