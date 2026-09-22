@@ -1684,16 +1684,16 @@ function updateBullets(level, dt) {
   });
   level.bullets = level.bullets.filter(b => b.life > 0);
 
-  // colisión balas enemigas -> jugador/vehículo (propio o de otro jugador conectado)
+  // colisión balas enemigas -> jugador/vehículo. Cada bala solo puede
+  // golpear al jugador al que fue dirigida (b.targetRef), nunca a otro,
+  // aunque pase cerca de alguien más.
   level.enemyBullets.forEach(b => {
-    const targets = mpGetAllTargets(level);
-    for (const t of targets) {
-      const r = t.isSelf ? (level.vehicle ? level.vehicle.r : 16) : 20;
-      if (dist(b.x, b.y, t.x, t.y) < r) {
-        mpDamageTarget(level, t, b.dmg);
-        b.life = 0;
-        break;
-      }
+    const t = mpResolveTargetRef(level, b.targetRef);
+    if (!t) return;
+    const r = t.isSelf ? (level.vehicle ? level.vehicle.r : 16) : 20;
+    if (dist(b.x, b.y, t.x, t.y) < r) {
+      mpDamageTarget(level, t, b.dmg);
+      b.life = 0;
     }
   });
   level.enemyBullets = level.enemyBullets.filter(b => b.life > 0);
@@ -1756,7 +1756,7 @@ function updateZombies(level, dt) {
       if (z.cd <= 0) {
         z.cd = 1.6;
         if (target.isSelf) {
-          level.enemyBullets.push({ x: z.x, y: z.y, vx: Math.cos(z.angle) * 260, vy: Math.sin(z.angle) * 260, dmg: 8, life: 2 });
+          level.enemyBullets.push({ x: z.x, y: z.y, vx: Math.cos(z.angle) * 260, vy: Math.sin(z.angle) * 260, dmg: 8, life: 2, targetRef: mpTargetRef(target) });
         } else {
           mpDamageTarget(level, target, 8);
         }
@@ -1797,6 +1797,30 @@ function mpNearestTarget(z, targets) {
 function mpDamageTarget(level, target, dmg) {
   if (target.isSelf) { damagePlayerOrVehicle(level, dmg); return; }
   if (target.conn) { try { target.conn.send({ type: 'damage', dmg, targetId: target.conn.peer }); } catch (e) { /* noop */ } }
+}
+
+// Cada bala enemiga se etiqueta con el jugador exacto al que apuntaba en el
+// momento de dispararse (mpTargetRef), y esa referencia es la ÚNICA que
+// puede recibir el impacto (mpResolveTargetRef). Así una bala dirigida a un
+// jugador jamás puede dañar a otro por estar cerca: el daño queda
+// individual por jugador, sin importar ráfagas en abanico o círculos.
+function mpTargetRef(t) {
+  return { isSelf: t.isSelf, peer: t.conn ? t.conn.peer : null };
+}
+
+function mpResolveTargetRef(level, ref) {
+  if (!ref || ref.isSelf) {
+    const self = level.vehicle || level.player;
+    return { x: self.x, y: self.y, isSelf: true, conn: null };
+  }
+  if (mpIsActive() && MP.isHost) {
+    const conn = MP.conns.find(c => c.peer === ref.peer);
+    if (conn) {
+      const s = MP.remoteStates[conn.peer];
+      if (s) return { x: s.x, y: s.y, isSelf: false, conn };
+    }
+  }
+  return null; // el jugador al que apuntaba ya no está conectado
 }
 
 function updateFollowers(level, dt) {
@@ -1875,7 +1899,7 @@ function updateHelis(level, dt) {
           const shots = 3 + phase;
           for (let i = 0; i < shots; i++) {
             const a = aimAngle + rand(-0.08, 0.08);
-            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 9, life: 2.6 });
+            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 9, life: 2.6, targetRef: mpTargetRef(target) });
           }
         } else if (pattern === 1) {
           // abanico amplio hacia el jugador
@@ -1883,21 +1907,21 @@ function updateHelis(level, dt) {
           const arc = 1.05;
           for (let i = 0; i < count; i++) {
             const a = aimAngle - arc / 2 + (arc / (count - 1)) * i;
-            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 8, life: 2.6 });
+            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 8, life: 2.6, targetRef: mpTargetRef(target) });
           }
         } else {
           // volley circular en todas direcciones
           const count = 10 + phase * 2;
           for (let i = 0; i < count; i++) {
             const a = (Math.PI * 2 / count) * i;
-            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed * 0.85, vy: Math.sin(a) * bulletSpeed * 0.85, dmg: 7, life: 2.9 });
+            level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * bulletSpeed * 0.85, vy: Math.sin(a) * bulletSpeed * 0.85, dmg: 7, life: 2.9, targetRef: mpTargetRef(target) });
           }
         }
       }
     } else if (inRange && h.cd <= 0) {
       h.cd = 1.1;
       const a = angleTo(h.x, h.y, target.x, target.y);
-      level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, dmg: 10, life: 2.4 });
+      level.enemyBullets.push({ x: h.x, y: h.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, dmg: 10, life: 2.4, targetRef: mpTargetRef(target) });
     }
 
     if (h.hp <= 0) {
@@ -1938,7 +1962,7 @@ function updateMiniPlanes(level, dt) {
     const d = dist(m.x, m.y, target.x, target.y);
     if (d < 400 && m.cd <= 0) {
       m.cd = rand(1.2, 1.8);
-      level.enemyBullets.push({ x: m.x, y: m.y, vx: Math.cos(m.angle) * 220, vy: Math.sin(m.angle) * 220, dmg: 6, life: 2.4 });
+      level.enemyBullets.push({ x: m.x, y: m.y, vx: Math.cos(m.angle) * 220, vy: Math.sin(m.angle) * 220, dmg: 6, life: 2.4, targetRef: mpTargetRef(target) });
     }
   });
   level.miniPlanes.forEach(m => {
@@ -2000,7 +2024,7 @@ function updateBoss(level, dt) {
     if (b.cd <= 0) {
       b.cd = fireRate;
       const a = b.angle + rand(-0.06, 0.06);
-      level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, dmg: 9, life: 2.6 });
+      level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, dmg: 9, life: 2.6, targetRef: mpTargetRef(nearest) });
     }
   } else {
     // fase 2 (<=50%) y fase 3 (<=30%): patrones variados de "cualquier bala",
@@ -2014,20 +2038,20 @@ function updateBoss(level, dt) {
         const shots = b.phase === 3 ? 5 : 3;
         for (let i = 0; i < shots; i++) {
           const a = aimAngle + rand(-0.09, 0.09);
-          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 9, life: 2.6 });
+          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 9, life: 2.6, targetRef: mpTargetRef(nearest) });
         }
       } else if (pattern === 1) {
         const count = b.phase === 3 ? 9 : 6;
         const arc = 1.15;
         for (let i = 0; i < count; i++) {
           const a = aimAngle - arc / 2 + (arc / (count - 1)) * i;
-          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 8, life: 2.6 });
+          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed, vy: Math.sin(a) * bulletSpeed, dmg: 8, life: 2.6, targetRef: mpTargetRef(nearest) });
         }
       } else {
         const count = b.phase === 3 ? 16 : 10;
         for (let i = 0; i < count; i++) {
           const a = (Math.PI * 2 / count) * i;
-          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed * 0.85, vy: Math.sin(a) * bulletSpeed * 0.85, dmg: 7, life: 2.9 });
+          level.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * bulletSpeed * 0.85, vy: Math.sin(a) * bulletSpeed * 0.85, dmg: 7, life: 2.9, targetRef: mpTargetRef(nearest) });
         }
       }
     }
@@ -2060,7 +2084,7 @@ function updateMiniRobots(level, dt) {
     const d = dist(m.x, m.y, target.x, target.y);
     if (d < 380 && m.cd <= 0) {
       m.cd = rand(1.3, 1.9);
-      level.enemyBullets.push({ x: m.x, y: m.y, vx: Math.cos(m.angle) * 210, vy: Math.sin(m.angle) * 210, dmg: 6, life: 2.4 });
+      level.enemyBullets.push({ x: m.x, y: m.y, vx: Math.cos(m.angle) * 210, vy: Math.sin(m.angle) * 210, dmg: 6, life: 2.4, targetRef: mpTargetRef(target) });
     }
   });
   level.miniRobots.forEach(m => {
