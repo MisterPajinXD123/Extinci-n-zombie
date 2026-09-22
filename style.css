@@ -541,3 +541,24 @@ html,body{
 #screen-credits .credits-row:nth-child(2) .credits-ig-btn {
   margin-left: -6px;
 }
+
+/* ---------- Overlay de jugador eliminado (multijugador) ---------- */
+.hud-dead-overlay{
+  position:absolute; inset:0; display:none; align-items:flex-start; justify-content:center;
+  pointer-events:none; z-index:55; padding-top: 14%;
+}
+.hud-dead-overlay.show{ display:flex; }
+.dead-overlay-box{
+  background: rgba(10,14,9,0.82); border:1px solid var(--blood-dim);
+  box-shadow: 0 0 22px rgba(209,39,45,0.35);
+  padding:16px 30px; text-align:center; animation: dead-fade-in .3s ease;
+}
+.dead-overlay-title{
+  font-family: var(--font-display); letter-spacing:2px; font-size:1.4rem;
+  color: var(--blood); text-shadow: 0 0 12px rgba(209,39,45,0.6);
+}
+.dead-overlay-sub{ font-size:0.78rem; color: var(--bone); opacity:0.85; margin-top:6px; letter-spacing:0.5px; }
+.dead-overlay-btn{
+  margin-top:14px; pointer-events:auto; font-size:0.85rem; padding:10px 26px;
+}
+@keyframes dead-fade-in{ from{ opacity:0; transform:translateY(-8px);} to{ opacity:1; transform:translateY(0);} }

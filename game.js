@@ -537,11 +537,11 @@ function mpUpdateStageWaitUI(doneIds) {
 
 /* --- Mundo compartido: ver a los demás jugadores moverse en tiempo real --- */
 
-function mpBroadcastMyState(level, dt) {
-  MP._sendAcc = (MP._sendAcc || 0) + dt;
-  if (MP._sendAcc < 0.07) return; // ~14 veces por segundo, suficiente y liviano
-  MP._sendAcc = 0;
-  const payload = {
+// Arma el paquete de posición/estado propio, incluyendo si este jugador
+// ya fue eliminado (dead) para que el resto (y el Admin, si no lo es)
+// sepan que ya no debe recibir ataques ni contar como blanco.
+function mpBuildPosPayload(level) {
+  return {
     type: 'pos',
     id: mpMyId(),
     name: MP.myName,
@@ -552,7 +552,26 @@ function mpBroadcastMyState(level, dt) {
     vehicleColor: level.vehicle ? level.vehicle.mpColor : null,
     charColor: GAME.selection.character ? GAME.selection.character.color : '#e9e6d6',
     charAccent: GAME.selection.character ? GAME.selection.character.accent : '#5f8f2e',
+    dead: !!level.dead,
   };
+}
+
+// Envía el estado propio ya mismo, sin esperar al próximo tick periódico
+// (se usa justo al morir, para que los demás se enteren cuanto antes).
+function mpSendMyStateNow(level) {
+  const payload = mpBuildPosPayload(level);
+  if (MP.isHost) {
+    MP.conns.forEach(c => { try { c.send(payload); } catch (e) { /* noop */ } });
+  } else if (MP.hostConn) {
+    try { MP.hostConn.send(payload); } catch (e) { /* noop */ }
+  }
+}
+
+function mpBroadcastMyState(level, dt) {
+  MP._sendAcc = (MP._sendAcc || 0) + dt;
+  if (MP._sendAcc < 0.07) return; // ~14 veces por segundo, suficiente y liviano
+  MP._sendAcc = 0;
+  const payload = mpBuildPosPayload(level);
   if (MP.isHost) {
     MP.conns.forEach(c => { try { c.send(payload); } catch (e) { /* noop */ } });
     const zPayload = {
@@ -579,14 +598,17 @@ function mpDrawRemotePlayers(ctx) {
   const myId = mpMyId();
   Object.values(MP.remoteStates).forEach(s => {
     if (s.id === myId) return;
+    ctx.save();
+    if (s.dead) ctx.globalAlpha = 0.35; // cuerpo apagado para el jugador eliminado
     if (s.vehicleDef) drawVehicle(ctx, s.x, s.y, s.angle, s.vehicleDef, 1, s.vehicleColor);
     else drawHuman(ctx, s.x, s.y, s.angle, s.charColor, s.charAccent, 1);
+    ctx.restore();
     ctx.save();
-    ctx.fillStyle = '#e9e6d6';
-    ctx.font = '11px sans-serif';
+    ctx.fillStyle = s.dead ? '#d1272d' : '#e9e6d6';
+    ctx.font = s.dead ? 'bold 11px sans-serif' : '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
-    ctx.fillText(s.name || '', s.x, s.y - 46);
+    ctx.fillText(s.dead ? `☠ ${s.name || ''} — ELIMINADO` : (s.name || ''), s.x, s.y - 46);
     ctx.restore();
   });
 }
@@ -632,6 +654,7 @@ function handleAction(action) {
       break;
     }
     case 'mp-leave': mpLeaveRoom(); break;
+    case 'revive-player': reviveLocalPlayer(GAME.level); break;
     case 'mp-start':
       if (MP.isHost) mpBeginSelectionForAll();
       break;
@@ -1175,6 +1198,7 @@ function startStageGameplay() {
     time: 0,
     shakeT: 0,
     interactTarget: null,
+    dead: false, // true cuando ESTE jugador (local) fue eliminado, en multijugador
   };
 
   if (stage.onFoot) {
@@ -1199,6 +1223,8 @@ function startStageGameplay() {
   document.getElementById('touch-controls').classList.toggle('show', GAME.settings.touch);
   document.getElementById('hud-vehicle-block').style.display = stage.onFoot ? 'none' : 'block';
   document.getElementById('hud-boss').classList.remove('show');
+  const deadOverlay = document.getElementById('hud-dead-overlay');
+  if (deadOverlay) deadOverlay.classList.remove('show');
   updateWeaponSlotsUI();
   updateObjectiveUI();
 
@@ -1500,7 +1526,9 @@ function update(dt) {
   // disparar, pero el mundo compartido sigue corriendo igual (te pueden
   // seguir atacando). En solitario esto ni se evalúa: el loop entero se
   // frena directamente al pausar.
-  const iAmBlocked = GAME.paused && mpIsActive();
+  // Un jugador eliminado en multijugador queda en modo espectador: ya no se
+  // mueve ni dispara, pero el mundo compartido sigue corriendo para el resto.
+  const iAmBlocked = (GAME.paused && mpIsActive()) || level.dead;
   if (!iAmBlocked) {
     updatePlayerMovement(level, dt);
     updateVehicle(level, dt);
@@ -1519,8 +1547,10 @@ function update(dt) {
   if (level.companion) updateCompanion(level, dt);
   if (level.allies) updateAllies(level, dt);
 
-  level.camera.x = lerp(level.camera.x, level.player.x, 0.12);
-  level.camera.y = lerp(level.camera.y, level.player.y, 0.12);
+  if (!level.dead) {
+    level.camera.x = lerp(level.camera.x, level.player.x, 0.12);
+    level.camera.y = lerp(level.camera.y, level.player.y, 0.12);
+  }
 
   checkStageCompletion(level);
   updateHUD(level);
@@ -1719,29 +1749,69 @@ function spawnDeathParticles(level, x, y) {
 }
 
 function damagePlayerOrVehicle(level, dmg) {
-  if (level.vehicle) { level.vehicle.hp = Math.max(0, level.vehicle.hp - dmg); }
+  if (level.dead) return; // ya eliminado: ignorar daño posterior
+  if (level.vehicle) { level.vehicle.hp = Math.max(0, level.vehicle.hp - dmg); if (level.vehicle.hp <= 0) onVehicleDestroyed(level); }
   else if (level.player.invuln <= 0) { level.player.hp = Math.max(0, level.player.hp - dmg); level.player.invuln = 0.5; if (level.player.hp <= 0) onPlayerDown(level); }
   level.shakeT = Math.min(level.shakeT + 0.15, 0.25);
 }
 
-function onVehicleDestroyed(level) {
-  if (GAME.paused || level.subPhase === 'complete') return;
+// Detiene el loop local y muestra la pantalla de fracaso de la etapa.
+// Se usa tanto en solitario (apenas cae el único jugador) como en
+// multijugador (recién cuando TODOS los jugadores cayeron).
+function showRealStageFail(level, title, sub) {
+  if (level.subPhase === 'complete') return;
   level.subPhase = 'complete';
-  document.getElementById('stage-fail-title').textContent = 'VEHÍCULO DESTRUIDO';
-  document.getElementById('stage-fail-sub').textContent = 'Tu montura ha caído. La etapa se reinicia.';
+  document.getElementById('stage-fail-title').textContent = title;
+  document.getElementById('stage-fail-sub').textContent = sub;
   cancelAnimationFrame(GAME.rafId);
   stopBossMusic();
   showScreen('screen-stage-fail');
 }
 
+// En multijugador, cuando ESTE jugador cae no se termina la etapa: queda
+// marcado como eliminado (ya no ataca ni puede ser atacado, ver
+// mpGetAllTargets, y el resto lo ve apagado y con la etiqueta ELIMINADO).
+// Puede volver a jugar en cualquier momento presionando "Reintentar etapa"
+// en el aviso, lo que lo revive en el lugar donde cayó (ver reviveLocalPlayer).
+function markLocalPlayerDead(level, title, sub) {
+  if (level.dead) return;
+  level.dead = true;
+  const overlay = document.getElementById('hud-dead-overlay');
+  if (overlay) {
+    const titleEl = document.getElementById('dead-overlay-title');
+    const subEl = document.getElementById('dead-overlay-sub');
+    if (titleEl) titleEl.textContent = title;
+    if (subEl) subEl.textContent = sub + ' Los enemigos ya no te atacan.';
+    overlay.classList.add('show');
+  }
+  mpSendMyStateNow(level); // avisar de inmediato, sin esperar el próximo tick
+}
+
+// Revive al jugador local en el mismo lugar donde cayó, con la vida al
+// máximo y un instante de invulnerabilidad para no morir de nuevo al toque.
+// A partir de ahí vuelve a ser un blanco válido: los zombies y demás
+// enemigos vuelven a perseguirlo y atacarlo con normalidad.
+function reviveLocalPlayer(level) {
+  if (!level || !level.dead) return;
+  level.dead = false;
+  if (level.vehicle) level.vehicle.hp = level.vehicle.maxHp;
+  level.player.hp = level.player.maxHp;
+  level.player.invuln = 1.2;
+  const overlay = document.getElementById('hud-dead-overlay');
+  if (overlay) overlay.classList.remove('show');
+  mpSendMyStateNow(level); // avisar de inmediato que ya está de vuelta en juego
+}
+
+function onVehicleDestroyed(level) {
+  if (GAME.paused || level.subPhase === 'complete' || level.dead) return;
+  if (mpIsActive()) markLocalPlayerDead(level, 'VEHÍCULO DESTRUIDO', 'Tu montura ha caído.');
+  else showRealStageFail(level, 'VEHÍCULO DESTRUIDO', 'Tu montura ha caído. La etapa se reinicia.');
+}
+
 function onPlayerDown(level) {
-  if (level.subPhase === 'complete') return;
-  level.subPhase = 'complete';
-  document.getElementById('stage-fail-title').textContent = 'HAS CAÍDO';
-  document.getElementById('stage-fail-sub').textContent = 'Fuiste derribado por los zombies.';
-  cancelAnimationFrame(GAME.rafId);
-  stopBossMusic();
-  showScreen('screen-stage-fail');
+  if (level.subPhase === 'complete' || level.dead) return;
+  if (mpIsActive()) markLocalPlayerDead(level, 'HAS CAÍDO', 'Fuiste derribado por los zombies.');
+  else showRealStageFail(level, 'HAS CAÍDO', 'Fuiste derribado por los zombies.');
 }
 
 function updateZombies(level, dt) {
@@ -1773,22 +1843,29 @@ function updateZombies(level, dt) {
   level.particles = level.particles.filter(p => p.life > 0);
 }
 
-// Todos los jugadores conectados son blancos válidos para los zombies, no
-// solo el jugador local (esto solo importa cuando el Admin corre la
-// simulación compartida; en solitario simplemente devuelve un único blanco).
+// Todos los jugadores conectados y VIVOS son blancos válidos para los
+// zombies, no solo el jugador local (esto solo importa cuando el Admin
+// corre la simulación compartida; en solitario simplemente devuelve un
+// único blanco). Un jugador eliminado (dead) queda fuera de la lista, así
+// que los enemigos dejan de perseguirlo/atacarlo y se concentran en los
+// que siguen con vida.
 function mpGetAllTargets(level) {
   const self = level.vehicle || level.player;
-  const list = [{ x: self.x, y: self.y, isSelf: true, conn: null }];
+  const list = [];
+  if (!level.dead) list.push({ x: self.x, y: self.y, isSelf: true, conn: null });
   if (mpIsActive() && MP.isHost) {
     MP.conns.forEach(c => {
       const s = MP.remoteStates[c.peer];
-      if (s) list.push({ x: s.x, y: s.y, isSelf: false, conn: c });
+      if (s && !s.dead) list.push({ x: s.x, y: s.y, isSelf: false, conn: c });
     });
   }
   return list;
 }
 
 function mpNearestTarget(z, targets) {
+  // Si ya no queda nadie con vida, el enemigo no tiene a quién perseguir:
+  // se le devuelve su propia posición como blanco (no se mueve, no ataca a nadie).
+  if (!targets || targets.length === 0) return { x: z.x, y: z.y, isSelf: false, conn: null };
   let best = targets[0], bestD = Infinity;
   targets.forEach(t => { const d = dist(z.x, z.y, t.x, t.y); if (d < bestD) { bestD = d; best = t; } });
   return best;
@@ -2336,8 +2413,21 @@ function render() {
     ctx.globalAlpha = 1;
   });
 
+  ctx.save();
+  if (level.dead) ctx.globalAlpha = 0.35; // cuerpo apagado: este jugador ya fue eliminado
   if (level.vehicle) drawVehicle(ctx, level.vehicle.x, level.vehicle.y, level.vehicle.angle, level.vehicle.def, 1, level.vehicle.mpColor);
   else drawHuman(ctx, level.player.x, level.player.y, level.player.angle, GAME.selection.character.color, GAME.selection.character.accent, 1);
+  ctx.restore();
+  if (level.dead) {
+    const selfPos = level.vehicle || level.player;
+    ctx.save();
+    ctx.fillStyle = '#d1272d';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+    ctx.fillText('☠ ELIMINADO', selfPos.x, selfPos.y - 46);
+    ctx.restore();
+  }
 
   if (mpIsActive()) mpDrawRemotePlayers(ctx);
 
