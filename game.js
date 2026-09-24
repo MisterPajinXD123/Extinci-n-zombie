@@ -117,6 +117,18 @@ const STAGES = [
   },
 ];
 
+// Familia a rescatar en la Etapa 2 cuando es multijugador: la cantidad de
+// integrantes a rescatar depende de cuántos jugadores hay en la partida
+// (2=científico+hermano, 3=+mamá, 4=+papá, 5=+gato). En solitario siempre
+// es solo el científico (comportamiento original).
+const STAGE2_FAMILY = [
+  { kind: 'scientist', name: 'CIENTÍFICO' },
+  { kind: 'brother', name: 'HERMANO' },
+  { kind: 'mother', name: 'MAMÁ' },
+  { kind: 'father', name: 'PAPÁ' },
+  { kind: 'cat', name: 'GATO' },
+];
+
 /* ------------------------------ ESTADO GLOBAL ---------------------------- */
 
 const GAME = {
@@ -286,6 +298,15 @@ function mpCreateRoom() {
       if (data.type === 'pos') {
         MP.remoteStates[data.id] = data;
         MP.conns.forEach(c => { if (c !== conn) { try { c.send(data); } catch (e) { /* noop */ } } });
+        // Etapa 2: este invitado está escoltando a un familiar, se actualiza
+        // su posición en la copia del Admin (que es la que se reenvía).
+        if (data.ownedNpc) {
+          const level = GAME.level;
+          if (level && level.npcs) {
+            const n = level.npcs.find(nn => nn.id === data.ownedNpc.id && nn.rescuedBy === data.id);
+            if (n) { n.x = data.ownedNpc.x; n.y = data.ownedNpc.y; if (data.ownedNpc.delivered) n.delivered = true; }
+          }
+        }
       }
       if (data.type === 'zombie-hit') {
         const level = GAME.level;
@@ -312,6 +333,22 @@ function mpCreateRoom() {
             if (m) { m.hp -= data.dmg; m.hit = 0.12; }
           }
         }
+      }
+      // Etapa 1: un invitado pide que se le acredite el rescate de un
+      // superviviente puntual (el Admin valida y es quien manda la verdad).
+      if (data.type === 'rescue-survivor') {
+        const level = GAME.level;
+        if (level) mpClaimSurvivor(level, data.id);
+      }
+      // Etapa 2: un invitado pide rescatar a un familiar puntual.
+      if (data.type === 'rescue-npc') {
+        const level = GAME.level;
+        if (level) mpClaimNpc(level, data.id, conn.peer);
+      }
+      // Etapa 3: un invitado pide agarrar la poción del jefe helicóptero.
+      if (data.type === 'take-potion') {
+        const level = GAME.level;
+        if (level) mpClaimPotion(level, conn.peer);
       }
     });
     conn.on('close', () => {
@@ -344,7 +381,20 @@ function mpJoinRoom(code) {
       if (data.type === 'begin-stage') { mpStartStageForAll(); }
       if (data.type === 'stage-progress') { mpUpdateStageWaitUI(data.doneIds); }
       if (data.type === 'advance-stage') { advanceStage(); }
-      if (data.type === 'pos') { if (data.id !== mpMyId()) MP.remoteStates[data.id] = data; }
+      if (data.type === 'pos') {
+        if (data.id !== mpMyId()) {
+          MP.remoteStates[data.id] = data;
+          // Etapa 2: otro jugador está escoltando a un familiar; se
+          // actualiza su posición en nuestra copia local.
+          if (data.ownedNpc) {
+            const level = GAME.level;
+            if (level && level.npcs) {
+              const n = level.npcs.find(nn => nn.id === data.ownedNpc.id && nn.rescuedBy === data.id);
+              if (n) { n.x = data.ownedNpc.x; n.y = data.ownedNpc.y; if (data.ownedNpc.delivered) n.delivered = true; }
+            }
+          }
+        }
+      }
       if (data.type === 'zombies') {
         const level = GAME.level;
         if (level) {
@@ -361,6 +411,23 @@ function mpJoinRoom(code) {
           level.boss = data.boss;
           level.miniRobots = data.miniRobots;
           level.airBossDone = data.airBossDone;
+          // Etapa 3: la poción del jefe helicóptero es compartida — solo el
+          // Admin la crea/valida, acá solo se refleja su estado.
+          if (data.potion) {
+            let pk = level.pickups.find(p => p.kind === 'potion');
+            if (!pk) { pk = { x: data.potion.x, y: data.potion.y, kind: 'potion', taken: data.potion.taken, r: 20 }; level.pickups.push(pk); }
+            else { pk.taken = data.potion.taken; }
+          }
+          level.potionEligible = data.potionEligible || null;
+          level.potionHolder = data.potionHolder || null;
+          if (level.potionHolder === mpMyId()) level.hasPotion = true;
+        }
+      }
+      if (data.type === 'objective') {
+        const level = GAME.level;
+        if (level) {
+          if (data.survivors) { level.survivors = data.survivors; level.rescuedThisStage = data.rescuedThisStage; }
+          if (data.npcs) { level.npcs = data.npcs; }
         }
       }
       if (data.type === 'damage') {
@@ -541,6 +608,7 @@ function mpUpdateStageWaitUI(doneIds) {
 // ya fue eliminado (dead) para que el resto (y el Admin, si no lo es)
 // sepan que ya no debe recibir ataques ni contar como blanco.
 function mpBuildPosPayload(level) {
+  const ownedNpc = level.npcs ? level.npcs.find(n => n.rescuedBy === mpMyId() && !n.delivered) : null;
   return {
     type: 'pos',
     id: mpMyId(),
@@ -554,6 +622,11 @@ function mpBuildPosPayload(level) {
     charColor: GAME.selection.character ? GAME.selection.character.color : '#e9e6d6',
     charAccent: GAME.selection.character ? GAME.selection.character.accent : '#5f8f2e',
     dead: !!level.dead,
+    hp: level.vehicle ? level.vehicle.hp : level.player.hp,
+    // Etapa 2 en multijugador: si este jugador está escoltando a un
+    // familiar, se manda su posición actual para que el resto (y el Admin,
+    // si no lo es) lo vean moverse en tiempo real.
+    ownedNpc: ownedNpc ? { id: ownedNpc.id, x: ownedNpc.x, y: ownedNpc.y, delivered: ownedNpc.delivered } : null,
   };
 }
 
@@ -581,18 +654,89 @@ function mpBroadcastMyState(level, dt) {
       kills: GAME.run.kills, totalKills: GAME.run.totalKills, killsThisStage: level.killsThisStage,
     };
     MP.conns.forEach(c => { try { c.send(zPayload); } catch (e) { /* noop */ } });
-    const ePayload = {
-      type: 'enemies',
-      heli: level.heli ? { x: level.heli.x, y: level.heli.y, hp: level.heli.hp, maxHp: level.heli.maxHp, isBoss: level.heli.isBoss, active: level.heli.active, shielded: level.heli.shielded, hit: level.heli.hit } : null,
-      miniPlanes: level.miniPlanes ? level.miniPlanes.map(m => ({ id: m.id, x: m.x, y: m.y, angle: m.angle, hp: m.hp, maxHp: m.maxHp, hit: m.hit, alive: true })) : null,
-      boss: level.boss ? { x: level.boss.x, y: level.boss.y, angle: level.boss.angle, hp: level.boss.hp, maxHp: level.boss.maxHp, active: level.boss.active, defeated: level.boss.defeated, coreDefeated: level.boss.coreDefeated, invulnerable: level.boss.invulnerable, phase: level.boss.phase, hit: level.boss.hit } : null,
-      miniRobots: level.miniRobots ? level.miniRobots.map(m => ({ id: m.id, x: m.x, y: m.y, angle: m.angle, hp: m.hp, maxHp: m.maxHp, hit: m.hit })) : null,
-      airBossDone: level.airBossDone || false,
-    };
+    const ePayload = mpBuildEnemiesPayload(level);
     MP.conns.forEach(c => { try { c.send(ePayload); } catch (e) { /* noop */ } });
+    // Etapas 1 y 2: misión de rescate compartida (supervivientes/familia).
+    if (stageHasSharedObjective(level.stage)) {
+      MP.conns.forEach(c => { try { c.send(mpBuildObjectivePayload(level)); } catch (e) { /* noop */ } });
+    }
   } else if (MP.hostConn) {
     try { MP.hostConn.send(payload); } catch (e) { /* noop */ }
   }
+}
+
+function stageHasSharedObjective(stage) {
+  return stage.objectiveType === 'rescue' || stage.objectiveType === 'findNPC';
+}
+
+function mpBuildEnemiesPayload(level) {
+  const potionPk = level.pickups.find(pk => pk.kind === 'potion');
+  return {
+    type: 'enemies',
+    heli: level.heli ? { x: level.heli.x, y: level.heli.y, hp: level.heli.hp, maxHp: level.heli.maxHp, isBoss: level.heli.isBoss, active: level.heli.active, shielded: level.heli.shielded, hit: level.heli.hit } : null,
+    miniPlanes: level.miniPlanes ? level.miniPlanes.map(m => ({ id: m.id, x: m.x, y: m.y, angle: m.angle, hp: m.hp, maxHp: m.maxHp, hit: m.hit, alive: true })) : null,
+    boss: level.boss ? { x: level.boss.x, y: level.boss.y, angle: level.boss.angle, hp: level.boss.hp, maxHp: level.boss.maxHp, active: level.boss.active, defeated: level.boss.defeated, coreDefeated: level.boss.coreDefeated, invulnerable: level.boss.invulnerable, phase: level.boss.phase, hit: level.boss.hit } : null,
+    miniRobots: level.miniRobots ? level.miniRobots.map(m => ({ id: m.id, x: m.x, y: m.y, angle: m.angle, hp: m.hp, maxHp: m.maxHp, hit: m.hit })) : null,
+    airBossDone: level.airBossDone || false,
+    // Etapa 3: la poción que suelta el jefe helicóptero, quién puede
+    // agarrarla (más vida) y quién ya la tiene en mano.
+    potion: potionPk ? { x: potionPk.x, y: potionPk.y, taken: potionPk.taken } : null,
+    potionEligible: level.potionEligible || null,
+    potionHolder: level.potionHolder || null,
+  };
+}
+
+function mpBuildObjectivePayload(level) {
+  const payload = { type: 'objective' };
+  if (level.stage.objectiveType === 'rescue') {
+    payload.survivors = level.survivors.map(s => ({ id: s.id, x: s.x, y: s.y, rescued: s.rescued }));
+    payload.rescuedThisStage = level.rescuedThisStage;
+  }
+  if (level.stage.objectiveType === 'findNPC') {
+    payload.npcs = level.npcs.map(n => ({ id: n.id, kind: n.kind, name: n.name, x: n.x, y: n.y, found: n.found, following: n.following, delivered: n.delivered, rescuedBy: n.rescuedBy }));
+  }
+  return payload;
+}
+
+// El Admin es quien decide la verdad de la misión compartida: valida el
+// pedido (que no esté ya rescatado) y, si es válido, lo aplica y avisa a
+// todos de inmediato (además del reenvío periódico ya existente).
+function mpClaimSurvivor(level, id) {
+  const s = level.survivors.find(sv => sv.id === id);
+  if (!s || s.rescued) return;
+  s.rescued = true;
+  level.rescuedThisStage++;
+  GAME.run.rescued++;
+  if (mpIsActive() && MP.isHost) MP.conns.forEach(c => { try { c.send(mpBuildObjectivePayload(level)); } catch (e) { /* noop */ } });
+}
+
+// Etapa 2: cada jugador puede rescatar a un solo familiar. El Admin valida
+// que el familiar exista, no esté ya encontrado, y que quien lo pide no
+// tenga ya otro familiar a cargo.
+function mpClaimNpc(level, id, requesterId) {
+  const n = level.npcs.find(nn => nn.id === id);
+  if (!n || n.found) return;
+  const alreadyHasOne = level.npcs.some(nn => nn.rescuedBy === requesterId);
+  if (alreadyHasOne) return;
+  n.found = true;
+  n.following = true;
+  n.rescuedBy = requesterId;
+  if (mpIsActive() && MP.isHost) MP.conns.forEach(c => { try { c.send(mpBuildObjectivePayload(level)); } catch (e) { /* noop */ } });
+}
+
+// Etapa 3: solo puede agarrar la poción quien tenga más vida en la partida
+// en el momento en que el jefe helicóptero la soltó (level.potionEligible,
+// calculado una sola vez ahí). Si nadie es "más elegible" que otro
+// (empate), potionEligible queda null y cualquiera puede tomarla.
+function mpClaimPotion(level, id) {
+  if (level.potionHolder) return;
+  if (mpIsActive() && level.potionEligible && !level.potionEligible.includes(id)) return;
+  const potion = level.pickups.find(pk => pk.kind === 'potion' && !pk.taken);
+  if (!potion) return;
+  potion.taken = true;
+  level.potionHolder = id;
+  if (id === mpMyId()) level.hasPotion = true;
+  if (mpIsActive() && MP.isHost) MP.conns.forEach(c => { try { c.send(mpBuildEnemiesPayload(level)); } catch (e) { /* noop */ } });
 }
 
 function mpDrawRemotePlayers(ctx) {
@@ -612,7 +756,9 @@ function mpDrawRemotePlayers(ctx) {
     ctx.font = s.dead ? 'bold 11px sans-serif' : '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
-    ctx.fillText(s.dead ? `☠ ${s.name || ''} — ELIMINADO` : (s.name || ''), s.x, s.y - 46);
+    const holdsPotion = GAME.level && GAME.level.potionHolder === s.id;
+    const label = s.dead ? `☠ ${s.name || ''} — ELIMINADO` : `${s.name || ''}${holdsPotion ? ' 🧪' : ''}`;
+    ctx.fillText(label, s.x, s.y - 46);
     ctx.restore();
   });
 }
@@ -894,11 +1040,28 @@ function buildWeaponGrid() {
 
 /* ---------------------------- INTRO DE ETAPA -------------------------------- */
 
+// En multijugador, las etapas 1 y 2 cambian de objetivo (15 supervivientes
+// compartidos; familia según cantidad de jugadores), así que el texto de
+// introducción se arma dinámicamente en vez de usar siempre el texto fijo.
+function stageObjectiveText(stage) {
+  if (stage.objectiveType === 'rescue' && mpIsActive()) {
+    return 'Entre todo el equipo deben rescatar a 15 supervivientes (presiona E cerca de cada uno; el conteo es compartido) y luego dirigirse a la zona segura.';
+  }
+  if (stage.objectiveType === 'findNPC' && mpIsActive()) {
+    const count = clamp(MP.players.length, 1, STAGE2_FAMILY.length);
+    const names = STAGE2_FAMILY.slice(0, count).map(f => f.name.charAt(0) + f.name.slice(1).toLowerCase());
+    return count > 1
+      ? `Encuentren a la familia perdida (${names.join(', ')}) — cada jugador rescata a uno solo y lo escolta a la zona segura.`
+      : stage.objectiveText;
+  }
+  return stage.objectiveText;
+}
+
 function beginStageIntro() {
   const stage = STAGES[GAME.stageIndex];
   document.getElementById('stage-intro-num').textContent = `ETAPA ${stage.id}`;
   document.getElementById('stage-intro-title').textContent = stage.name;
-  document.getElementById('stage-intro-obj').textContent = stage.objectiveText;
+  document.getElementById('stage-intro-obj').textContent = stageObjectiveText(stage);
   showScreen('screen-stage-intro');
 }
 
@@ -1210,9 +1373,26 @@ function drawSurvivor(ctx, x, y) {
 }
 
 function drawScientist(ctx, x, y) {
+  drawFamilyMember(ctx, x, y, 'scientist');
+}
+
+// Dibuja al familiar de la etapa 2: mismo cuerpo base (drawSurvivor) con un
+// distintivo de color/forma según a quién representa.
+function drawFamilyMember(ctx, x, y, kind) {
   drawSurvivor(ctx, x, y);
   ctx.save(); ctx.translate(x, y);
-  ctx.fillStyle = '#d1272d'; ctx.fillRect(-2, -4, 4, 4);
+  const badgeColor = {
+    scientist: '#d1272d', brother: '#4c9dfb', mother: '#fb4cae', father: '#c07a2e', cat: '#e0b13f',
+  }[kind] || '#d1272d';
+  if (kind === 'cat') {
+    // silueta simple de un gato sentado junto al superviviente
+    ctx.fillStyle = badgeColor;
+    ctx.beginPath(); ctx.ellipse(11, 7, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(7, 1); ctx.lineTo(9, -6); ctx.lineTo(11, 2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(13, 1); ctx.lineTo(16, -5); ctx.lineTo(16, 2); ctx.closePath(); ctx.fill();
+  } else {
+    ctx.fillStyle = badgeColor; ctx.fillRect(-2, -4, 4, 4);
+  }
   ctx.restore();
 }
 
@@ -1250,10 +1430,13 @@ function startStageGameplay() {
     player, vehicle,
     weaponStates, activeWeapon: 0,
     bullets: [], enemyBullets: [], zombies: [], survivors: [], pickups: [], particles: [],
-    npc: null, companion: null,
+    npcs: [], companion: null,
     safeZone,
     decor: generateDecor(stage),
     camera: { x: player.x, y: player.y },
+    // Etapa 1: en multijugador se rescatan 15 personas en vez de 5, y el
+    // conteo/las posiciones son compartidas entre todos (ver mpClaimSurvivor).
+    rescueTarget: (mpIsActive() && stage.objectiveType === 'rescue') ? 15 : stage.rescueTarget,
     rescuedThisStage: 0,
     killsThisStage: 0,
     distanceTravelled: 0,
@@ -1264,6 +1447,7 @@ function startStageGameplay() {
     shakeT: 0,
     interactTarget: null,
     dead: false, // true cuando ESTE jugador (local) fue eliminado, en multijugador
+    potionEligible: null, potionHolder: null, // etapa 3: quién puede/ya agarró la poción
   };
 
   if (stage.onFoot) {
@@ -1332,12 +1516,28 @@ function seedLevelEntities(level) {
   for (let i = 0; i < zombieCount; i++) spawnZombie(level);
 
   if (stage.objectiveType === 'rescue') {
-    for (let i = 0; i < stage.rescueTarget; i++) {
-      level.survivors.push({ x: rand(150, WORLD.w - 150), y: rand(150, WORLD.h - 150), rescued: false, following: false });
+    // Las posiciones de los supervivientes deben ser IGUALES para todos
+    // (es una misión compartida): solo el Admin (o en solitario) las genera;
+    // los invitados arrancan vacíos y las reciben del Admin (ver 'objective').
+    if (!mpIsActive() || MP.isHost) {
+      for (let i = 0; i < level.rescueTarget; i++) {
+        level.survivors.push({ id: i, x: rand(150, WORLD.w - 150), y: rand(150, WORLD.h - 150), rescued: false, following: false });
+      }
     }
   }
   if (stage.objectiveType === 'findNPC') {
-    level.npc = { x: rand(200, WORLD.w - 200), y: rand(200, WORLD.h - 200), found: false, following: false, kind: 'scientist' };
+    // En multijugador se rescata a un familiar por jugador (científico,
+    // hermano, mamá, papá, gato — en ese orden); en solitario solo al
+    // científico, igual que antes. Solo el Admin (o en solitario) genera
+    // las posiciones; los invitados las reciben (ver 'objective').
+    const familyCount = mpIsActive() ? clamp(MP.players.length, 1, STAGE2_FAMILY.length) : 1;
+    if (!mpIsActive() || MP.isHost) {
+      level.npcs = STAGE2_FAMILY.slice(0, familyCount).map((f, i) => ({
+        id: i, kind: f.kind, name: f.name,
+        x: rand(200, WORLD.w - 200), y: rand(200, WORLD.h - 200),
+        found: false, following: false, delivered: false, rescuedBy: null,
+      }));
+    }
   }
   if (stage.objectiveType === 'airBoss') {
     level.heliTimer = 3;
@@ -1556,25 +1756,31 @@ function tryInteract() {
   const level = GAME.level; if (!level) return;
   const p = level.player;
   const stage = level.stage;
+  const myId = mpMyId();
 
   if (stage.objectiveType === 'rescue') {
-    level.survivors.forEach(s => {
-      if (!s.rescued && !s.following && dist(p.x, p.y, s.x, s.y) < 46) {
-        s.following = true;
-        s.rescued = true;
-        level.rescuedThisStage++;
-        GAME.run.rescued++;
+    const s = level.survivors.find(sv => !sv.rescued && dist(p.x, p.y, sv.x, sv.y) < 46);
+    if (s) {
+      if (!mpIsActive() || MP.isHost) mpClaimSurvivor(level, s.id);
+      else if (MP.hostConn) { try { MP.hostConn.send({ type: 'rescue-survivor', id: s.id }); } catch (e) { /* noop */ } }
+    }
+  }
+  if (stage.objectiveType === 'findNPC') {
+    // Cada jugador puede rescatar solo a UN familiar (ver mpClaimNpc).
+    const alreadyHasOne = level.npcs.some(n => n.rescuedBy === myId);
+    if (!alreadyHasOne) {
+      const n = level.npcs.find(nn => !nn.found && dist(p.x, p.y, nn.x, nn.y) < 46);
+      if (n) {
+        if (!mpIsActive() || MP.isHost) mpClaimNpc(level, n.id, myId);
+        else if (MP.hostConn) { try { MP.hostConn.send({ type: 'rescue-npc', id: n.id }); } catch (e) { /* noop */ } }
       }
-    });
+    }
   }
-  if (stage.objectiveType === 'findNPC' && level.npc && !level.npc.found) {
-    if (dist(p.x, p.y, level.npc.x, level.npc.y) < 46) { level.npc.found = true; level.npc.following = true; }
-  }
-  if (stage.objectiveType === 'airBoss' && !level.hasPotion) {
+  if (stage.objectiveType === 'airBoss' && !level.hasPotion && !level.potionHolder) {
     const potion = level.pickups.find(pk => pk.kind === 'potion' && !pk.taken);
     if (potion && dist(p.x, p.y, potion.x, potion.y) < 46) {
-      potion.taken = true;
-      level.hasPotion = true;
+      if (!mpIsActive() || MP.isHost) mpClaimPotion(level, myId);
+      else if (MP.hostConn) { try { MP.hostConn.send({ type: 'take-potion' }); } catch (e) { /* noop */ } }
     }
   }
 }
@@ -1665,15 +1871,22 @@ function updatePlayerMovement(level, dt) {
   // interacción cercana (para mostrar prompt)
   level.interactTarget = null;
   if (level.stage.objectiveType === 'rescue') {
-    const s = level.survivors.find(s => !s.rescued && !s.following && dist(p.x, p.y, s.x, s.y) < 46);
+    const s = level.survivors.find(sv => !sv.rescued && dist(p.x, p.y, sv.x, sv.y) < 46);
     if (s) level.interactTarget = s;
   }
-  if (level.stage.objectiveType === 'findNPC' && level.npc && !level.npc.found) {
-    if (dist(p.x, p.y, level.npc.x, level.npc.y) < 46) level.interactTarget = level.npc;
+  if (level.stage.objectiveType === 'findNPC') {
+    const alreadyHasOne = level.npcs.some(n => n.rescuedBy === mpMyId());
+    if (!alreadyHasOne) {
+      const n = level.npcs.find(nn => !nn.found && dist(p.x, p.y, nn.x, nn.y) < 46);
+      if (n) level.interactTarget = n;
+    }
   }
-  if (level.stage.objectiveType === 'airBoss' && !level.hasPotion) {
+  if (level.stage.objectiveType === 'airBoss' && !level.hasPotion && !level.potionHolder) {
     const potion = level.pickups.find(pk => pk.kind === 'potion' && !pk.taken);
-    if (potion && dist(p.x, p.y, potion.x, potion.y) < 46) level.interactTarget = potion;
+    // El prompt "presiona E" solo aparece si este jugador puede agarrarla
+    // (tiene la vida más alta, o hay empate y cualquiera puede).
+    const eligible = !mpIsActive() || !level.potionEligible || level.potionEligible.includes(mpMyId());
+    if (potion && eligible && dist(p.x, p.y, potion.x, potion.y) < 46) level.interactTarget = potion;
   }
 }
 
@@ -1974,10 +2187,16 @@ function updateFollowers(level, dt) {
   const p = level.player;
   // Los supervivientes de la etapa de rescate ya se cuentan al interactuar (ver tryInteract);
   // esto solo evita procesar cada frame algo que ya no es visible.
-  if (level.npc && level.npc.following && !level.npc.delivered) {
-    level.npc.x = lerp(level.npc.x, p.x - 30, 0.06); level.npc.y = lerp(level.npc.y, p.y + 20, 0.06);
-    if (dist(level.npc.x, level.npc.y, level.safeZone.x, level.safeZone.y) < level.safeZone.r) level.npc.delivered = true;
-  }
+  // Etapa 2: cada jugador solo mueve al familiar QUE ÉL rescató (ver
+  // mpClaimNpc); los familiares de otros jugadores llegan ya movidos por
+  // red (ver 'ownedNpc' en mpBuildPosPayload y el manejo de 'pos').
+  const myId = mpMyId();
+  level.npcs.forEach(n => {
+    if (n.following && !n.delivered && n.rescuedBy === myId) {
+      n.x = lerp(n.x, p.x - 30, 0.06); n.y = lerp(n.y, p.y + 20, 0.06);
+      if (dist(n.x, n.y, level.safeZone.x, level.safeZone.y) < level.safeZone.r) n.delivered = true;
+    }
+  });
 }
 
 function updatePickups(level) {
@@ -2076,6 +2295,26 @@ function updateHelis(level, dt) {
         level.pickups.push({ x: h.x, y: h.y, kind: 'potion', taken: false, r: 20 });
         level.airBossDone = true;
         level.miniPlanes = [];
+        // Etapa 3: se calcula UNA sola vez, en este momento, quién tiene la
+        // vida más alta de la partida — solo esos jugadores podrán agarrar
+        // la poción (empate = cualquiera de ellos, potionEligible queda con
+        // todos los empatados). En solitario no aplica ninguna restricción.
+        if (mpIsActive()) {
+          const selfHp = level.vehicle ? level.vehicle.hp : level.player.hp;
+          const candidates = level.dead ? [] : [{ id: mpMyId(), hp: selfHp }];
+          if (MP.isHost) {
+            MP.conns.forEach(c => {
+              const s = MP.remoteStates[c.peer];
+              if (s && !s.dead) candidates.push({ id: c.peer, hp: s.hp || 0 });
+            });
+          }
+          if (candidates.length) {
+            const maxHp = Math.max(...candidates.map(c => c.hp));
+            level.potionEligible = candidates.filter(c => c.hp === maxHp).map(c => c.id);
+          } else {
+            level.potionEligible = null; // nadie con datos de vida: no se restringe
+          }
+        }
       }
       level.heli = null;
     }
@@ -2312,14 +2551,21 @@ function checkStageCompletion(level) {
   const stage = level.stage;
   let done = false;
   if (stage.objectiveType === 'rescue') {
-    const allRescued = level.rescuedThisStage >= stage.rescueTarget;
+    const allRescued = level.rescuedThisStage >= level.rescueTarget;
     const inSafeZone = allRescued && dist(level.player.x, level.player.y, level.safeZone.x, level.safeZone.y) < level.safeZone.r;
     done = allRescued && inSafeZone;
   }
-  if (stage.objectiveType === 'findNPC') done = !!(level.npc && level.npc.delivered);
+  // Etapa 2: se completa cuando TODOS los familiares (los que le toquen a
+  // esta partida) fueron entregados en la zona segura, sin importar quién
+  // rescató a cada uno.
+  if (stage.objectiveType === 'findNPC') done = level.npcs.length > 0 && level.npcs.every(n => n.delivered);
   if (stage.objectiveType === 'airBoss') {
-    const inSafeZone = level.hasPotion && dist(level.player.x, level.player.y, level.safeZone.x, level.safeZone.y) < level.safeZone.r;
-    done = !!level.airBossDone && !!level.hasPotion && inSafeZone;
+    // La poción es compartida: alcanza con que ALGUIEN la tenga (o, en
+    // solitario, con que el único jugador la tenga) para que cada uno
+    // pueda completar su parte llegando a la zona segura.
+    const potionSecured = mpIsActive() ? !!level.potionHolder : level.hasPotion;
+    const inSafeZone = potionSecured && dist(level.player.x, level.player.y, level.safeZone.x, level.safeZone.y) < level.safeZone.r;
+    done = !!level.airBossDone && potionSecured && inSafeZone;
   }
   if (stage.objectiveType === 'survive') {
     const killTargetReached = level.killsThisStage >= stage.surviveKillTarget;
@@ -2465,7 +2711,7 @@ function render() {
   level.pickups.forEach(pk => { if (!pk.taken && pk.kind === 'potion') drawPickup(ctx, pk.x, pk.y, 'potion', '#9dfb4c'); });
 
   if (level.stage.objectiveType === 'rescue') level.survivors.forEach(s => { if (!s.rescued) drawSurvivor(ctx, s.x, s.y); });
-  if (level.npc && !level.npc.delivered) drawScientist(ctx, level.npc.x, level.npc.y);
+  level.npcs.forEach(n => { if (!n.delivered) drawFamilyMember(ctx, n.x, n.y, n.kind); });
 
   level.zombies.forEach(z => { if (z.type === 'rider') drawRiderZombie(ctx, z.x, z.y, z.angle); else drawZombie(ctx, z.x, z.y, z.angle, z.type, z.hit); });
 
@@ -2515,8 +2761,11 @@ function render() {
     const targets = level.survivors.filter(s => !s.rescued);
     drawOffscreenIndicators(ctx, camX, camY, w, h, targets, '#e9e6d6', 'SUPERVIVIENTE');
   }
-  if (level.stage.objectiveType === 'findNPC' && level.npc && !level.npc.delivered) {
-    drawOffscreenIndicators(ctx, camX, camY, w, h, [level.npc], '#e9e6d6', level.npc.following ? 'CIENTÍFICO' : 'CIENTÍFICO PERDIDO');
+  if (level.stage.objectiveType === 'findNPC') {
+    level.npcs.forEach(n => {
+      if (n.delivered) return;
+      drawOffscreenIndicators(ctx, camX, camY, w, h, [n], '#e9e6d6', n.following ? n.name : `${n.name} PERDIDO/A`);
+    });
   }
   if (level.stage.objectiveType === 'airBoss' && level.heli && level.heli.active) {
     drawOffscreenIndicators(ctx, camX, camY, w, h, [level.heli], level.heli.isBoss ? '#ff5050' : '#e0b13f', level.heli.isBoss ? 'HELI JEFE' : 'HELICÓPTERO');
@@ -2617,7 +2866,7 @@ function drawMinimap(level) {
   ctx.fillStyle = '#d1272d';
   level.zombies.forEach(z => { ctx.fillRect(z.x * sx - 1, z.y * sy - 1, 2, 2); });
   if (level.stage.objectiveType === 'rescue') { ctx.fillStyle = '#e9e6d6'; level.survivors.forEach(s => { if (!s.rescued) ctx.fillRect(s.x * sx - 1.5, s.y * sy - 1.5, 3, 3); }); }
-  if (level.npc && !level.npc.delivered) { ctx.fillStyle = '#e9e6d6'; ctx.fillRect(level.npc.x * sx - 2, level.npc.y * sy - 2, 4, 4); }
+  if (level.npcs.length) { ctx.fillStyle = '#e9e6d6'; level.npcs.forEach(n => { if (!n.delivered) ctx.fillRect(n.x * sx - 2, n.y * sy - 2, 4, 4); }); }
   if (level.heli && level.heli.active) {
     ctx.fillStyle = level.heli.isBoss ? '#ff5050' : '#e0b13f';
     const hs = level.heli.isBoss ? 3 : 2;
@@ -2670,7 +2919,7 @@ function updateHUD(level) {
   updateWeaponSlotsUI();
 
   const inv = document.getElementById('inv-items'); inv.innerHTML = '';
-  if (level.stage.objectiveType === 'rescue') { const el = document.createElement('div'); el.className = 'inv-item'; el.textContent = level.rescuedThisStage; inv.appendChild(el); }
+  if (level.stage.objectiveType === 'rescue') { const el = document.createElement('div'); el.className = 'inv-item'; el.textContent = `${level.rescuedThisStage}/${level.rescueTarget}`; inv.appendChild(el); }
   if (level.hasPotion) { const el = document.createElement('div'); el.className = 'inv-item'; el.textContent = '🧪'; inv.appendChild(el); }
 
   if (level.stage.objectiveType === 'survive') {
@@ -2679,15 +2928,31 @@ function updateHUD(level) {
       ? '¡Objetivo cumplido! Ve a la zona segura'
       : `ZOMBIES ELIMINADOS: ${level.killsThisStage}/${level.stage.surviveKillTarget}  ·  ${pct}%`;
   } else if (level.stage.objectiveType === 'rescue') {
-    document.getElementById('hud-objective').textContent = level.rescuedThisStage >= level.stage.rescueTarget
+    document.getElementById('hud-objective').textContent = level.rescuedThisStage >= level.rescueTarget
       ? 'Todos rescatados. ¡Ve a la zona segura!'
-      : `Rescatados: ${level.rescuedThisStage}/${level.stage.rescueTarget}`;
+      : `Rescatados: ${level.rescuedThisStage}/${level.rescueTarget}`;
   } else if (level.stage.objectiveType === 'findNPC') {
-    document.getElementById('hud-objective').textContent = level.npc.delivered ? 'Científico a salvo' : level.npc.following ? 'Escolta al científico a la zona segura' : 'Encuentra al científico';
+    const total = level.npcs.length;
+    const delivered = level.npcs.filter(n => n.delivered).length;
+    const mine = level.npcs.find(n => n.rescuedBy === mpMyId());
+    let text;
+    if (total > 0 && delivered >= total) text = 'Familia a salvo. ¡Ve a la zona segura!';
+    else if (mine && !mine.delivered) text = `Escolta a ${mine.name} a la zona segura (${delivered}/${total} a salvo)`;
+    else if (mine && mine.delivered) text = `Esperando al resto del equipo (${delivered}/${total} a salvo)`;
+    else {
+      const pending = level.npcs.filter(n => !n.found).map(n => n.name).join(', ');
+      text = total > 1 ? `Rescata a un familiar — faltan: ${pending} (${delivered}/${total} a salvo)` : 'Encuentra al científico';
+    }
+    document.getElementById('hud-objective').textContent = text;
   } else if (level.stage.objectiveType === 'airBoss') {
-    document.getElementById('hud-objective').textContent = level.hasPotion
-      ? '¡Ve a la zona segura!'
-      : level.airBossDone ? 'Presiona E para recoger la poción' : 'Sobrevive y derrota al helicóptero principal';
+    let text;
+    if (level.hasPotion) text = '¡Ve a la zona segura!';
+    else if (level.potionHolder) text = 'Otro jugador tiene la poción. ¡Ve a la zona segura!';
+    else if (level.airBossDone) {
+      const eligible = !mpIsActive() || !level.potionEligible || level.potionEligible.includes(mpMyId());
+      text = eligible ? 'Presiona E para recoger la poción' : 'Solo el jugador con más vida puede recoger la poción';
+    } else text = 'Sobrevive y derrota al helicóptero principal';
+    document.getElementById('hud-objective').textContent = text;
   } else if (level.stage.objectiveType === 'boss') {
     document.getElementById('hud-objective').textContent = level.boss.active ? 'Derrota al jefe final' : 'Avanza hacia el norte del mapa';
   }
